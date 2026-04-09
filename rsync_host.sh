@@ -5,6 +5,7 @@ set -euo pipefail
 usage() {
   cat >&2 <<'EOF'
 usage:
+  ./rsync_host.sh --only_host <ssh-host>
   ./rsync_host.sh --host <ssh-host>
   ./rsync_host.sh <host[:port]> <user> [password]
 EOF
@@ -14,6 +15,8 @@ HOST=""
 PORT=""
 USER_NAME=""
 PASSWORD=""
+USE_SSHPASS=0
+ONLY_HOST=0
 
 if [[ $# -gt 0 && "$1" != --* ]]; then
   if [[ $# -lt 2 ]]; then
@@ -40,6 +43,15 @@ else
           exit 1
         fi
         HOST="$2"
+        shift 2
+        ;;
+      --only_host)
+        if [[ $# -lt 2 ]]; then
+          echo "error: --only_host requires a value" >&2
+          exit 1
+        fi
+        HOST="$2"
+        ONLY_HOST=1
         shift 2
         ;;
       --port)
@@ -81,6 +93,25 @@ if [[ -z "$HOST" ]]; then
   exit 1
 fi
 
+if [[ "$ONLY_HOST" -eq 1 ]]; then
+  ssh "$HOST" 'mkdir -p /root/RVDATA'
+
+  rsync -avh --progress --partial \
+    --exclude '.git/' \
+    --exclude '.venv/' \
+    --exclude '__pycache__/' \
+    --exclude '*.pyc' \
+    --exclude '*.pyo' \
+    --exclude '*.pyd' \
+    --exclude '.DS_Store' \
+    --exclude '/source/' \
+    --include '/data/' \
+    --include '/data/seed.jsonl' \
+    --exclude '/data/*' \
+    /Users/zxf/Desktop/DataSet/ "${HOST}":/root/RVDATA/
+  exit 0
+fi
+
 REMOTE_HOST="$HOST"
 if [[ -n "$USER_NAME" ]]; then
   REMOTE_HOST="${USER_NAME}@${HOST}"
@@ -96,21 +127,41 @@ if [[ -n "$PASSWORD" ]]; then
     echo "error: password mode requires sshpass to be installed" >&2
     exit 1
   fi
-  SSHPASS_CMD=(sshpass -p "$PASSWORD")
-else
-  SSHPASS_CMD=()
+  USE_SSHPASS=1
 fi
 
-"${SSHPASS_CMD[@]}" ssh "${SSH_ARGS[@]}" "$REMOTE_HOST" 'mkdir -p /root/RVDATA'
+if [[ "$USE_SSHPASS" -eq 1 ]]; then
+  sshpass -p "$PASSWORD" ssh "${SSH_ARGS[@]}" "$REMOTE_HOST" 'mkdir -p /root/RVDATA'
 
-"${SSHPASS_CMD[@]}" rsync -avh --progress --partial \
-  -e "ssh ${PORT:+-p $PORT}" \
-  --exclude '.git/' \
-  --exclude '.venv/' \
-  --exclude '__pycache__/' \
-  --exclude '*.pyc' \
-  --exclude '*.pyo' \
-  --exclude '*.pyd' \
-  --exclude '.DS_Store' \
-  --exclude '/source/' \
-  /Users/zxf/Desktop/DataSet/ "${REMOTE_HOST}":/root/RVDATA/
+  sshpass -p "$PASSWORD" rsync -avh --progress --partial \
+    -e "ssh ${PORT:+-p $PORT}" \
+    --exclude '.git/' \
+    --exclude '.venv/' \
+    --exclude '__pycache__/' \
+    --exclude '*.pyc' \
+    --exclude '*.pyo' \
+    --exclude '*.pyd' \
+    --exclude '.DS_Store' \
+    --exclude '/source/' \
+    --include '/data/' \
+    --include '/data/seed.jsonl' \
+    --exclude '/data/*' \
+    /Users/zxf/Desktop/DataSet/ "${REMOTE_HOST}":/root/RVDATA/
+else
+  ssh "${SSH_ARGS[@]}" "$REMOTE_HOST" 'mkdir -p /root/RVDATA'
+
+  rsync -avh --progress --partial \
+    -e "ssh ${PORT:+-p $PORT}" \
+    --exclude '.git/' \
+    --exclude '.venv/' \
+    --exclude '__pycache__/' \
+    --exclude '*.pyc' \
+    --exclude '*.pyo' \
+    --exclude '*.pyd' \
+    --exclude '.DS_Store' \
+    --exclude '/source/' \
+    --include '/data/' \
+    --include '/data/seed.jsonl' \
+    --exclude '/data/*' \
+    /Users/zxf/Desktop/DataSet/ "${REMOTE_HOST}":/root/RVDATA/
+fi

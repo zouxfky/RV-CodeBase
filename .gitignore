@@ -1,0 +1,20 @@
+.DS_Store
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local config and secrets
+llm_config.env
+
+# Runtime artifacts
+tmp/
+
+# Large raw/source data not suitable for a normal GitHub repo
+source/
+
+# Data
+data/

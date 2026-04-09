@@ -30,8 +30,7 @@ append_jsonl = IO_API.append_jsonl
 load_pid_set = IO_API.load_pid_set
 read_jsonl = IO_API.read_jsonl
 write_session = SESSION_API.write_session
-merge_testcase_updates = PARSER_API.merge_testcase_updates
-validate_partial_testcase_shape = PARSER_API.validate_partial_testcase_shape
+validate_testcase_shape = PARSER_API.validate_testcase_shape
 
 
 ROOT_DIR = CURRENT_DIR.parent
@@ -64,36 +63,31 @@ def log_result(result: dict) -> None:
             debug_print(line)
 
 
-def build_testcase_repair_payload(*, testcase: list[dict], result_row: dict) -> tuple[list[dict], str, set[int]]:
-    all_indices = {int(item["testcase_index"]) for item in testcase}
-    failed_indices: set[int] = set()
-    filtered_results: list[dict] = []
-
+def build_testcase_repair_payload(*, testcase: list[dict], result_row: dict) -> tuple[list[dict], str]:
+    passed_indices: list[int] = []
+    failed_indices: list[int] = []
     for case in result_row.get("results", []):
-        if case.get("status") != "fail":
-            continue
-        failed_case = dict(case)
         try:
-            testcase_index = int(failed_case.get("testcase_index", 0))
+            testcase_index = int(case.get("testcase_index", 0))
         except Exception:
             testcase_index = 0
-        if testcase_index > 0:
-            failed_indices.add(testcase_index)
-        filtered_results.append(failed_case)
+        if testcase_index <= 0:
+            continue
+        if case.get("status") == "pass":
+            passed_indices.append(testcase_index)
+        elif case.get("status") == "fail":
+            failed_indices.append(testcase_index)
 
-    if not failed_indices:
-        failed_indices = set(all_indices)
-
-    failed_testcases = [
-        item for item in testcase if int(item["testcase_index"]) in failed_indices
-    ]
-    filtered_error = {
+    repair_context = {
         "pid": result_row.get("pid"),
         "global_sf_n": result_row.get("global_sf_n", 0),
-        "fail_count": len(filtered_results),
-        "results": filtered_results,
+        "pass_count": result_row.get("pass_count", 0),
+        "fail_count": result_row.get("fail_count", 0),
+        "passed_testcase_indices": passed_indices,
+        "failed_testcase_indices": failed_indices,
+        "results": result_row.get("results", []),
     }
-    return failed_testcases, json.dumps(filtered_error, ensure_ascii=False, indent=2), failed_indices
+    return list(testcase), json.dumps(repair_context, ensure_ascii=False, indent=2)
 
 
 def parse_args() -> argparse.Namespace:
@@ -143,8 +137,6 @@ def process_one_pid(
     program = ""
     program_bin_path: Path | None = None
     testcase: list[dict] = []
-    testcase_repair_subset: list[dict] = []
-    testcase_repair_indices: set[int] = set()
     last_error_type = ""
     last_message = ""
 
@@ -237,36 +229,26 @@ def process_one_pid(
                     )
             else:
                 debug_print(f"[TESTCASE_REPAIR] pid={pid} attempt={attempt} start")
-                debug_print(
-                    f"[TESTCASE_REPAIR_INPUT] pid={pid} attempt={attempt} "
-                    f"failed_cases={len(testcase_repair_subset)} indices={sorted(testcase_repair_indices)}"
-                )
                 with args.llm_semaphore:
                     result = GENERATE_API.repair_testcase(
                         config_path=config_path,
                         pid=pid,
                         code=code,
                         program=program,
-                        testcase=testcase_repair_subset,
+                        testcase=testcase,
                         error=last_message,
                         messages=testcase_messages,
                         log_dir=log_dir,
                         attempt=attempt,
                     )
             testcase_messages = result["messages"]
-            if testcase:
-                repaired_subset = result["testcase"]
-                repair_failed = validate_partial_testcase_shape(
-                    repaired_subset,
-                    allowed_indices=testcase_repair_indices or None,
+            repaired_testcase = result["testcase"]
+            repair_failed = validate_testcase_shape(repaired_testcase)
+            if repair_failed:
+                raise ValueError(
+                    "failed testcase repair checks: " + ", ".join(repair_failed)
                 )
-                if repair_failed:
-                    raise ValueError(
-                        "failed testcase repair checks: " + ", ".join(repair_failed)
-                    )
-                testcase = merge_testcase_updates(testcase, repaired_subset)
-            else:
-                testcase = result["testcase"]
+            testcase = repaired_testcase
             write_session(session_dir=session_dir, pid=pid, session_name="testcase", messages=testcase_messages)
             debug_print(f"[TESTCASE_READY] pid={pid} attempt={attempt} cases={len(testcase)}")
             with args.run_semaphore:
@@ -297,16 +279,12 @@ def process_one_pid(
                     "result_row": result_row,
                 }
             last_error_type = "debug"
-            testcase_repair_subset, last_message, testcase_repair_indices = build_testcase_repair_payload(
+            _, last_message = build_testcase_repair_payload(
                 testcase=testcase,
                 result_row=result_row,
             )
             debug_print(
                 f"[TESTCASE_CHECK_FAIL] pid={pid} attempt={attempt} fail_count={fail_count}"
-            )
-            debug_print(
-                f"[TESTCASE_REPAIR_PREP] pid={pid} failed_cases={len(testcase_repair_subset)} "
-                f"indices={sorted(testcase_repair_indices)}"
             )
         except Exception as exc:
             last_error_type = "testcase"

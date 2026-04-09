@@ -183,11 +183,32 @@ def check_testcases(
             f"Please reduce the workload slightly."
         )
 
-    def build_scale_not_reached_message(global_sf_n: int, elapsed_ms: int) -> str:
+    def build_too_small_message(
+        *,
+        global_sf_n: int,
+        testcase_index: int,
+        elapsed_ms: int,
+        reference_indices: list[int],
+    ) -> str:
+        if reference_indices:
+            reference_text = ",".join(str(index) for index in reference_indices)
+            return (
+                f"testcase_index={testcase_index} is too small at Global_SF_N={global_sf_n}: "
+                f"measured runtime {elapsed_ms}ms did not exceed {TARGET_RUNTIME_MS}ms. "
+                f"Please rebuild this testcase by referring to the passed testcases at indices "
+                f"[{reference_text}]."
+            )
         return (
-            f"runtime is still {elapsed_ms}ms at Global_SF_N={global_sf_n}, which did not exceed "
-            f"{TARGET_RUNTIME_MS}ms. Please increase the non-Global_SF_N parameters so the program "
-            f"takes longer under scaling."
+            f"testcase_index={testcase_index} is too small at Global_SF_N={global_sf_n}: "
+            f"measured runtime {elapsed_ms}ms did not exceed {TARGET_RUNTIME_MS}ms. "
+            f"Please rebuild this testcase."
+        )
+
+    def build_scale_not_reached_message(global_sf_n: int) -> str:
+        return (
+            f"all testcase runtimes stayed at or below {TARGET_RUNTIME_MS}ms up to "
+            f"Global_SF_N={global_sf_n}. The testcases are too small and should be rebuilt "
+            f"by referring to any passed testcases once available."
         )
 
     def build_global_failure(message: str) -> dict:
@@ -277,6 +298,98 @@ def check_testcases(
                 stdout="",
             )
 
+    def run_measured_case(
+        *,
+        testcase_item: dict,
+        global_sf_n: int,
+    ) -> dict:
+        index = int(testcase_item["testcase_index"])
+        debug_print(
+            f"[RUN_TESTCASE_WARMUP] pid={pid} global_sf_n={global_sf_n} testcase_index={index}"
+        )
+        _ = run_one_case(
+            testcase_item=testcase_item,
+            global_sf_n=global_sf_n,
+        )
+        debug_print(
+            f"[RUN_TESTCASE_MEASURE] pid={pid} global_sf_n={global_sf_n} testcase_index={index}"
+        )
+        return run_one_case(
+            testcase_item=testcase_item,
+            global_sf_n=global_sf_n,
+        )
+
+    def run_suite_at_scale(
+        *,
+        global_sf_n: int,
+        items: list[dict],
+    ) -> list[dict]:
+        case_results: list[dict] = []
+        for index, item in enumerate(items):
+            if index == 0:
+                case_results.append(
+                    run_measured_case(
+                        testcase_item=item,
+                        global_sf_n=global_sf_n,
+                    )
+                )
+            else:
+                case_results.append(
+                    run_one_case(
+                        testcase_item=item,
+                        global_sf_n=global_sf_n,
+                    )
+                )
+        return case_results
+
+    def has_runtime_target_hit(case_results: list[dict]) -> bool:
+        for case_result in case_results:
+            message = str(case_result.get("message", ""))
+            if case_result.get("status") == "pass" and int(case_result.get("time", 0)) > TARGET_RUNTIME_MS:
+                return True
+            if case_result.get("status") == "fail" and "runtime exceeded" in message:
+                return True
+        return False
+
+    def has_non_runtime_failure(case_results: list[dict]) -> bool:
+        for case_result in case_results:
+            message = str(case_result.get("message", ""))
+            if case_result.get("status") == "fail" and "runtime exceeded" not in message:
+                return True
+        return False
+
+    def finalize_locked_scale_results(
+        *,
+        global_sf_n: int,
+        case_results: list[dict],
+    ) -> list[dict]:
+        reference_indices = [
+            int(case_result["testcase_index"])
+            for case_result in case_results
+            if case_result.get("status") == "pass"
+            and int(case_result.get("time", 0)) > TARGET_RUNTIME_MS
+        ]
+        finalized: list[dict] = []
+        for case_result in case_results:
+            if case_result.get("status") == "pass" and int(case_result.get("time", 0)) <= TARGET_RUNTIME_MS:
+                finalized.append(
+                    build_case_result(
+                        testcase_index=int(case_result["testcase_index"]),
+                        status="fail",
+                        time_ms=int(case_result.get("time", 0)),
+                        message=build_too_small_message(
+                            global_sf_n=global_sf_n,
+                            testcase_index=int(case_result["testcase_index"]),
+                            elapsed_ms=int(case_result.get("time", 0)),
+                            reference_indices=reference_indices,
+                        ),
+                        stdout=str(case_result.get("stdout", "")),
+                    )
+                )
+                continue
+            finalized.append(case_result)
+        return finalized
+
     testcase_failed = validate_testcase_shape(testcase)
     if testcase_failed:
         debug_print(f"[CHECK_TESTCASES_INVALID] pid={pid} failed={','.join(testcase_failed)}")
@@ -313,64 +426,33 @@ def check_testcases(
     if not sorted_cases:
         return build_global_failure("empty testcase")
 
-    calibration_case = sorted_cases[0]
     global_sf_n = SF_START
-    selected_calibration_result: dict | None = None
 
-    debug_print(
-        f"[SF_SEARCH_START] pid={pid} testcase_index={int(calibration_case['testcase_index'])} "
-        f"start_sf={SF_START} target_ms={TARGET_RUNTIME_MS}"
-    )
     while True:
-        probe_result = run_one_case(
-            testcase_item=calibration_case,
-            global_sf_n=global_sf_n,
+        debug_print(
+            f"[SF_ROUND_START] pid={pid} global_sf_n={global_sf_n} "
+            f"cases={len(sorted_cases)} target_ms={TARGET_RUNTIME_MS}"
         )
-        if probe_result["status"] == "fail":
+        case_results = run_suite_at_scale(
+            global_sf_n=global_sf_n,
+            items=sorted_cases,
+        )
+
+        if has_runtime_target_hit(case_results):
+            finalized_results = finalize_locked_scale_results(
+                global_sf_n=global_sf_n,
+                case_results=case_results,
+            )
             summary = build_summary(
                 global_sf_n=global_sf_n,
-                case_results=[probe_result],
+                case_results=finalized_results,
             )
             debug_print(
                 f"[CHECK_TESTCASES_DONE] pid={pid} pass_count={summary['pass_count']} fail_count={summary['fail_count']}"
             )
             return summary
-        if int(probe_result["time"]) > TARGET_RUNTIME_MS:
-            selected_calibration_result = probe_result
-            debug_print(
-                f"[SF_LOCKED] pid={pid} global_sf_n={global_sf_n} time_ms={int(probe_result['time'])}"
-            )
-            break
-        if global_sf_n >= MAX_GLOBAL_SF_N:
-            probe_result = build_case_result(
-                testcase_index=int(calibration_case["testcase_index"]),
-                status="fail",
-                time_ms=int(probe_result["time"]),
-                message=build_scale_not_reached_message(global_sf_n, int(probe_result["time"])),
-                stdout=str(probe_result.get("stdout", "")),
-            )
-            summary = build_summary(
-                global_sf_n=global_sf_n,
-                case_results=[probe_result],
-            )
-            debug_print(
-                f"[CHECK_TESTCASES_DONE] pid={pid} pass_count={summary['pass_count']} fail_count={summary['fail_count']}"
-            )
-            return summary
-        global_sf_n *= SF_MULTIPLIER
-        debug_print(f"[SF_SEARCH_NEXT] pid={pid} next_global_sf_n={global_sf_n}")
 
-    case_results: list[dict] = []
-    if selected_calibration_result is not None:
-        case_results.append(selected_calibration_result)
-
-    for item in sorted_cases[1:]:
-        case_result = run_one_case(
-            testcase_item=item,
-            global_sf_n=global_sf_n,
-        )
-        case_results.append(case_result)
-        if case_result["status"] == "fail" and "runtime exceeded" in str(case_result["message"]):
+        if has_non_runtime_failure(case_results):
             summary = build_summary(
                 global_sf_n=global_sf_n,
                 case_results=case_results,
@@ -380,11 +462,31 @@ def check_testcases(
             )
             return summary
 
-    summary = build_summary(
-        global_sf_n=global_sf_n,
-        case_results=case_results,
-    )
-    debug_print(
-        f"[CHECK_TESTCASES_DONE] pid={pid} pass_count={summary['pass_count']} fail_count={summary['fail_count']}"
-    )
-    return summary
+        if global_sf_n >= MAX_GLOBAL_SF_N:
+            finalized_results = [
+                build_case_result(
+                    testcase_index=int(case_result["testcase_index"]),
+                    status="fail",
+                    time_ms=int(case_result.get("time", 0)),
+                    message=build_too_small_message(
+                        global_sf_n=global_sf_n,
+                        testcase_index=int(case_result["testcase_index"]),
+                        elapsed_ms=int(case_result.get("time", 0)),
+                        reference_indices=[],
+                    )
+                    if case_result.get("status") == "pass"
+                    else build_scale_not_reached_message(global_sf_n),
+                    stdout=str(case_result.get("stdout", "")),
+                )
+                for case_result in case_results
+            ]
+            summary = build_summary(
+                global_sf_n=global_sf_n,
+                case_results=finalized_results,
+            )
+            debug_print(
+                f"[CHECK_TESTCASES_DONE] pid={pid} pass_count={summary['pass_count']} fail_count={summary['fail_count']}"
+            )
+            return summary
+        global_sf_n *= SF_MULTIPLIER
+        debug_print(f"[SF_SEARCH_NEXT] pid={pid} next_global_sf_n={global_sf_n}")

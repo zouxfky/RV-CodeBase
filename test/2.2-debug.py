@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import shutil
 import subprocess
 import sys
@@ -13,11 +14,13 @@ from _parser import testcase_to_stdin, validate_testcase_shape
 
 
 def debug_print(message: str) -> None:
-    print(message, flush=True)
+    return None
 
 
 SF_START = 10
 SF_MULTIPLIER = 10
+SF_SLOW_MULTIPLIER = 5
+SF_FAST_THRESHOLD_MS = 1_000
 TARGET_RUNTIME_MS = 10_000
 MAX_GLOBAL_SF_N = 1_000_000_000
 
@@ -298,49 +301,31 @@ def check_testcases(
                 stdout="",
             )
 
-    def run_measured_case(
-        *,
-        testcase_item: dict,
-        global_sf_n: int,
-    ) -> dict:
-        index = int(testcase_item["testcase_index"])
-        debug_print(
-            f"[RUN_TESTCASE_WARMUP] pid={pid} global_sf_n={global_sf_n} testcase_index={index}"
-        )
-        _ = run_one_case(
-            testcase_item=testcase_item,
-            global_sf_n=global_sf_n,
-        )
-        debug_print(
-            f"[RUN_TESTCASE_MEASURE] pid={pid} global_sf_n={global_sf_n} testcase_index={index}"
-        )
-        return run_one_case(
-            testcase_item=testcase_item,
-            global_sf_n=global_sf_n,
-        )
-
     def run_suite_at_scale(
         *,
         global_sf_n: int,
         items: list[dict],
     ) -> list[dict]:
-        case_results: list[dict] = []
-        for index, item in enumerate(items):
-            if index == 0:
-                case_results.append(
-                    run_measured_case(
-                        testcase_item=item,
-                        global_sf_n=global_sf_n,
-                    )
+        case_results_by_index: dict[int, dict] = {}
+        with ThreadPoolExecutor(max_workers=max(1, len(items))) as executor:
+            future_map = {}
+            for item in items:
+                testcase_index = int(item["testcase_index"])
+                future = executor.submit(
+                    run_one_case,
+                    testcase_item=item,
+                    global_sf_n=global_sf_n,
                 )
-            else:
-                case_results.append(
-                    run_one_case(
-                        testcase_item=item,
-                        global_sf_n=global_sf_n,
-                    )
-                )
-        return case_results
+                future_map[future] = testcase_index
+
+            for future in as_completed(future_map):
+                testcase_index = future_map[future]
+                case_results_by_index[testcase_index] = future.result()
+
+        return [
+            case_results_by_index[int(item["testcase_index"])]
+            for item in items
+        ]
 
     def has_runtime_target_hit(case_results: list[dict]) -> bool:
         for case_result in case_results:
@@ -357,6 +342,18 @@ def check_testcases(
             if case_result.get("status") == "fail" and "runtime exceeded" not in message:
                 return True
         return False
+
+    def choose_next_global_sf_n(current_global_sf_n: int, case_results: list[dict]) -> int:
+        if not case_results:
+            return current_global_sf_n * SF_MULTIPLIER
+        average_time_ms = sum(int(case_result.get("time", 0)) for case_result in case_results) / len(case_results)
+        multiplier = SF_MULTIPLIER if average_time_ms < SF_FAST_THRESHOLD_MS else SF_SLOW_MULTIPLIER
+        next_global_sf_n = current_global_sf_n * multiplier
+        debug_print(
+            f"[SF_SCALE_DECISION] pid={pid} global_sf_n={current_global_sf_n} "
+            f"avg_time_ms={int(average_time_ms)} multiplier={multiplier} next_global_sf_n={next_global_sf_n}"
+        )
+        return next_global_sf_n
 
     def finalize_locked_scale_results(
         *,
@@ -488,5 +485,7 @@ def check_testcases(
                 f"[CHECK_TESTCASES_DONE] pid={pid} pass_count={summary['pass_count']} fail_count={summary['fail_count']}"
             )
             return summary
-        global_sf_n *= SF_MULTIPLIER
+        global_sf_n = choose_next_global_sf_n(global_sf_n, case_results)
+        if global_sf_n > MAX_GLOBAL_SF_N:
+            global_sf_n = MAX_GLOBAL_SF_N
         debug_print(f"[SF_SEARCH_NEXT] pid={pid} next_global_sf_n={global_sf_n}")

@@ -41,7 +41,7 @@ _CLIENT_CACHE: dict[tuple[str, str, int], OpenAI] = {}
 
 
 def debug_print(message: str) -> None:
-    print(message, flush=True)
+    return None
 
 
 def render_prompt(template: str, **kwargs: str) -> str:

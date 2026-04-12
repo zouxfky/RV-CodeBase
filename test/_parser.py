@@ -4,6 +4,7 @@ import re
 
 PROGRAM_TAG = "program"
 TESTCASE_TAG = "testcase"
+EXPECTED_TESTCASE_COUNT = 3
 _PARAM_KEY_PATTERN = re.compile(r"^param(\d+)$")
 
 
@@ -85,6 +86,8 @@ def validate_testcase_shape(testcases: list[dict]) -> list[str]:
         testcases,
         require_consecutive_indices=True,
     )
+    if isinstance(testcases, list) and len(testcases) != EXPECTED_TESTCASE_COUNT:
+        failed.append("unexpected_testcase_count")
     return failed
 
 

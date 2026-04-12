@@ -1,7 +1,7 @@
 # Role & Objective
-You are given a previously verified C++ `main` test harness for the provided `solve(...)` algorithm.
 
-Your task is to generate exactly 10 diverse test inputs for that verified `main`.
+You are given a previously verified C++ `main` test harness for the provided `solve(...)` algorithm.
+Your task is to generate exactly 3 diverse test inputs for that verified `main`.
 
 # Input
 ## C++ Code
@@ -12,11 +12,14 @@ Your task is to generate exactly 10 diverse test inputs for that verified `main`
 # Strict Output Requirements
 
 ## 1. Testcase Constraints
-* **Quantity & Diversity:** Generate exactly 10 testcases (`testcase_index` 1 to 10). Include small, normal, boundary, and structurally diverse cases.
+
+* **Quantity & Diversity:** Generate exactly 3 testcases (`testcase_index` 1 to 3). Make them structurally diverse, but keep all of them valid, meaningful, and suitable for later scaling.
 * **Strict Adherence:** Follow the exact stdin protocol, parameter count, and order defined in the provided `main`.
-* **Do NOT generate `Global_SF_N`:** `Global_SF_N` is a scale factor controlled externally and will be appended later by the runner. Generate only the non-`Global_SF_N` input parameters. Do NOT include `Global_Result` as an input field.
+* **Scale Awareness:** `Global_SF_N` is controlled externally and will be appended later by the runner. Generate only the non-`Global_SF_N` input parameters, but choose them so the program is still legal, stable, and meaningful when `Global_SF_N` becomes large. Do NOT include `Global_Result` as an input field.
+* **Validity Over Extreme Boundaries:** Avoid empty, degenerate, or unsafe inputs unless the provided code clearly indicates they are valid and useful. Respect obvious implicit constraints from the code, such as matching dimensions, non-empty structures when indexing is used, safe string/array lengths, and dataset sizes that are compatible with folds, training loops, or other workload logic.
 
 ## 2. JSON Schema & String Encoding
+
 Output a single JSON array of objects. Each object represents one testcase and maps directly to the stdin lines expected by the `main` function.
 
 {
@@ -52,12 +55,12 @@ Output a single JSON array of objects. Each object represents one testcase and m
 },
 {
 "testcase_index": 2,
-"param1": "[]",
-"param2": "[]"
+"param1": "[10,20,30,40]",
+"param2": "[[1,1,1],[2,2,2],[3,3,3]]"
 }
 ]
 </testcase>
-*(Note: Example truncated, your actual output must contain exactly 10 cases)*
+*(Note: Example truncated, your actual output must contain exactly 3 cases)*
 
 # Output Format (CRITICAL)
 Output ONLY the `<testcase>...</testcase>` block containing the final JSON array. Do NOT output markdown code fences, explanations, notes, or any text outside the XML tags.

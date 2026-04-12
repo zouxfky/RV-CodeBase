@@ -2,12 +2,14 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 usage() {
   cat >&2 <<'EOF'
 usage:
-  ./rsync_host.sh --only_host <ssh-host>
-  ./rsync_host.sh --host <ssh-host>
-  ./rsync_host.sh <host[:port]> <user> [password]
+  ./rsync_host.sh --only_host <ssh-host> [--remote_path <path>]
+  ./rsync_host.sh --host <ssh-host> [--remote_path <path>]
+  ./rsync_host.sh <host[:port]> <user> [password] [--remote_path <path>]
 EOF
 }
 
@@ -15,6 +17,7 @@ HOST=""
 PORT=""
 USER_NAME=""
 PASSWORD=""
+REMOTE_PATH="/root/RVDATA"
 USE_SSHPASS=0
 ONLY_HOST=0
 
@@ -78,6 +81,14 @@ else
         PASSWORD="$2"
         shift 2
         ;;
+      --remote_path)
+        if [[ $# -lt 2 ]]; then
+          echo "error: --remote_path requires a value" >&2
+          exit 1
+        fi
+        REMOTE_PATH="$2"
+        shift 2
+        ;;
       *)
         echo "error: unknown argument: $1" >&2
         usage
@@ -94,7 +105,7 @@ if [[ -z "$HOST" ]]; then
 fi
 
 if [[ "$ONLY_HOST" -eq 1 ]]; then
-  ssh "$HOST" 'mkdir -p /root/RVDATA'
+  ssh "$HOST" "mkdir -p '$REMOTE_PATH'"
 
   rsync -avh --progress --partial \
     --exclude '.git/' \
@@ -106,9 +117,9 @@ if [[ "$ONLY_HOST" -eq 1 ]]; then
     --exclude '.DS_Store' \
     --exclude '/source/' \
     --include '/data/' \
-    --include '/data/seed.jsonl' \
+    --include '/data/seed*' \
     --exclude '/data/*' \
-    /Users/zxf/Desktop/DataSet/ "${HOST}":/root/RVDATA/
+    "${SCRIPT_DIR}/" "${HOST}":"${REMOTE_PATH}/"
   exit 0
 fi
 
@@ -117,9 +128,11 @@ if [[ -n "$USER_NAME" ]]; then
   REMOTE_HOST="${USER_NAME}@${HOST}"
 fi
 
-SSH_ARGS=()
+SSH_PORT_ARG=""
+RSYNC_SSH_CMD="ssh"
 if [[ -n "$PORT" ]]; then
-  SSH_ARGS+=(-p "$PORT")
+  SSH_PORT_ARG="-p $PORT"
+  RSYNC_SSH_CMD="ssh -p $PORT"
 fi
 
 if [[ -n "$PASSWORD" ]]; then
@@ -131,10 +144,14 @@ if [[ -n "$PASSWORD" ]]; then
 fi
 
 if [[ "$USE_SSHPASS" -eq 1 ]]; then
-  sshpass -p "$PASSWORD" ssh "${SSH_ARGS[@]}" "$REMOTE_HOST" 'mkdir -p /root/RVDATA'
+  if [[ -n "$SSH_PORT_ARG" ]]; then
+    sshpass -p "$PASSWORD" ssh -p "$PORT" "$REMOTE_HOST" "mkdir -p '$REMOTE_PATH'"
+  else
+    sshpass -p "$PASSWORD" ssh "$REMOTE_HOST" "mkdir -p '$REMOTE_PATH'"
+  fi
 
   sshpass -p "$PASSWORD" rsync -avh --progress --partial \
-    -e "ssh ${PORT:+-p $PORT}" \
+    -e "$RSYNC_SSH_CMD" \
     --exclude '.git/' \
     --exclude '.venv/' \
     --exclude '__pycache__/' \
@@ -144,14 +161,18 @@ if [[ "$USE_SSHPASS" -eq 1 ]]; then
     --exclude '.DS_Store' \
     --exclude '/source/' \
     --include '/data/' \
-    --include '/data/seed.jsonl' \
+    --include '/data/seed*' \
     --exclude '/data/*' \
-    /Users/zxf/Desktop/DataSet/ "${REMOTE_HOST}":/root/RVDATA/
+    "${SCRIPT_DIR}/" "${REMOTE_HOST}":"${REMOTE_PATH}/"
 else
-  ssh "${SSH_ARGS[@]}" "$REMOTE_HOST" 'mkdir -p /root/RVDATA'
+  if [[ -n "$SSH_PORT_ARG" ]]; then
+    ssh -p "$PORT" "$REMOTE_HOST" "mkdir -p '$REMOTE_PATH'"
+  else
+    ssh "$REMOTE_HOST" "mkdir -p '$REMOTE_PATH'"
+  fi
 
   rsync -avh --progress --partial \
-    -e "ssh ${PORT:+-p $PORT}" \
+    -e "$RSYNC_SSH_CMD" \
     --exclude '.git/' \
     --exclude '.venv/' \
     --exclude '__pycache__/' \
@@ -161,7 +182,7 @@ else
     --exclude '.DS_Store' \
     --exclude '/source/' \
     --include '/data/' \
-    --include '/data/seed.jsonl' \
+    --include '/data/seed*' \
     --exclude '/data/*' \
-    /Users/zxf/Desktop/DataSet/ "${REMOTE_HOST}":/root/RVDATA/
+    "${SCRIPT_DIR}/" "${REMOTE_HOST}":"${REMOTE_PATH}/"
 fi

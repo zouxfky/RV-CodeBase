@@ -115,6 +115,7 @@ class LLMPriorityLimiter:
 def build_testcase_repair_payload(*, testcase: list[dict], result_row: dict) -> tuple[list[dict], str]:
     passed_indices: list[int] = []
     failed_indices: list[int] = []
+    compact_results: list[dict] = []
     for case in result_row.get("results", []):
         try:
             testcase_index = int(case.get("testcase_index", 0))
@@ -126,6 +127,14 @@ def build_testcase_repair_payload(*, testcase: list[dict], result_row: dict) -> 
             passed_indices.append(testcase_index)
         elif case.get("status") == "fail":
             failed_indices.append(testcase_index)
+        compact_results.append(
+            {
+                "testcase_index": case.get("testcase_index"),
+                "status": case.get("status"),
+                "time": case.get("time"),
+                "message": case.get("message", ""),
+            }
+        )
 
     repair_context = {
         "pid": result_row.get("pid"),
@@ -134,7 +143,7 @@ def build_testcase_repair_payload(*, testcase: list[dict], result_row: dict) -> 
         "fail_count": result_row.get("fail_count", 0),
         "passed_testcase_indices": passed_indices,
         "failed_testcase_indices": failed_indices,
-        "results": result_row.get("results", []),
+        "results": compact_results,
     }
     return list(testcase), json.dumps(repair_context, ensure_ascii=False, indent=2)
 
@@ -190,7 +199,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--std", default="c++17")
     parser.add_argument("--compile-timeout", type=int, default=120)
     parser.add_argument("--run-timeout", type=int, default=240)
-    parser.add_argument("--program-max-rounds", type=int, default=3)
+    parser.add_argument("--program-max-rounds", type=int, default=2)
     parser.add_argument("--testcase-max-rounds", type=int, default=3)
     parser.add_argument("--llm-j", type=int, default=1)
     parser.add_argument("--run-j", type=int, default=1)

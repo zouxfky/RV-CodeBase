@@ -16,7 +16,7 @@ CONFIG_PATH = SRC_DIR / "llm_config.env"
 INPUT_PATH = DATA_DIR / "merge_dedupe_classify_transform.jsonl"
 VERIFY_PATH = DATA_DIR / "verify.jsonl"
 OUTPUT_PATH = DATA_DIR / "merge_dedupe_classify_transform_repair.jsonl"
-PROMPT_PATH = PROMPTS_DIR / "repair.md"
+PROMPT_PATH = PROMPTS_DIR / "1-repair.md"
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are an expert code repair agent. "

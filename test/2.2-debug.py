@@ -10,11 +10,8 @@ CURRENT_DIR = Path(__file__).resolve().parent
 if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
 
+from _log import debug_print
 from _parser import testcase_to_stdin, validate_testcase_shape
-
-
-def debug_print(message: str) -> None:
-    return None
 
 
 SF_START = 10
@@ -69,12 +66,13 @@ def compile_program(
             "-o",
             str(bin_path),
         ],
-        capture_output=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
         text=True,
         timeout=compile_timeout,
         check=False,
     )
-    message = (completed.stderr or completed.stdout or "").strip()
+    message = (completed.stderr or "").strip()
     debug_print(f"[COMPILE_DONE] pid={pid} suffix={suffix} returncode={completed.returncode}")
     return completed.returncode, bin_path, message
 
@@ -89,7 +87,6 @@ def check_program(
     cpp_std: str,
     compile_timeout: int,
 ) -> dict:
-    debug_print(f"[CHECK_PROGRAM_START] pid={pid}")
     try:
         returncode, bin_path, message = compile_program(
             pid=pid,
@@ -146,22 +143,18 @@ def check_testcases(
     run_timeout: int,
     bin_path: Path | None = None,
 ) -> dict:
-    debug_print(f"[CHECK_TESTCASES_START] pid={pid} total={len(testcase) if isinstance(testcase, list) else 'invalid'}")
-
     def build_case_result(
         *,
         testcase_index: int,
         status: str,
         time_ms: int,
         message: str,
-        stdout: str,
     ) -> dict:
         return {
             "testcase_index": testcase_index,
             "status": status,
             "time": time_ms,
             "message": message,
-            "stdout": stdout,
         }
 
     def build_summary(
@@ -223,7 +216,6 @@ def check_testcases(
                     status="fail",
                     time_ms=0,
                     message=message,
-                    stdout="",
                 )
             ],
         )
@@ -236,20 +228,17 @@ def check_testcases(
         index = int(testcase_item["testcase_index"])
         start = time.perf_counter()
         try:
-            debug_print(
-                f"[RUN_TESTCASE_START] pid={pid} global_sf_n={global_sf_n} testcase_index={index}"
-            )
             stdin_text = testcase_to_stdin(testcase_item, global_sf_n=str(global_sf_n))
             run_completed = subprocess.run(
                 [str(bin_path)],
                 input=stdin_text,
-                capture_output=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
                 text=True,
                 timeout=run_timeout,
                 check=False,
             )
             elapsed_ms = int((time.perf_counter() - start) * 1000)
-            stdout_text = (run_completed.stdout or "").rstrip("\r\n")
             stderr_text = (run_completed.stderr or "").strip()
             if run_completed.returncode == 0:
                 debug_print(
@@ -260,7 +249,6 @@ def check_testcases(
                     status="pass",
                     time_ms=elapsed_ms,
                     message="",
-                    stdout=stdout_text,
                 )
             debug_print(
                 f"[RUN_TESTCASE_FAIL] pid={pid} global_sf_n={global_sf_n} testcase_index={index} time_ms={elapsed_ms}"
@@ -269,8 +257,7 @@ def check_testcases(
                 testcase_index=index,
                 status="fail",
                 time_ms=elapsed_ms,
-                message=stderr_text or stdout_text or f"binary exited with code {run_completed.returncode}",
-                stdout=stdout_text,
+                message=stderr_text or f"binary exited with code {run_completed.returncode}",
             )
         except subprocess.TimeoutExpired:
             elapsed_ms = int((time.perf_counter() - start) * 1000)
@@ -285,20 +272,21 @@ def check_testcases(
                     global_sf_n=global_sf_n,
                     testcase_index=index,
                 ),
-                stdout="",
             )
         except Exception as exc:
             elapsed_ms = int((time.perf_counter() - start) * 1000)
             debug_print(
                 f"[RUN_TESTCASE_EXCEPTION] pid={pid} global_sf_n={global_sf_n} testcase_index={index} time_ms={elapsed_ms}"
             )
-            debug_print(str(exc))
+            debug_print(
+                f"[RUN_TESTCASE_EXCEPTION_DETAIL] pid={pid} global_sf_n={global_sf_n} "
+                f"testcase_index={index} message={str(exc)}"
+            )
             return build_case_result(
                 testcase_index=index,
                 status="fail",
                 time_ms=elapsed_ms,
                 message=str(exc),
-                stdout="",
             )
 
     def run_suite_at_scale(
@@ -380,12 +368,23 @@ def check_testcases(
                             elapsed_ms=int(case_result.get("time", 0)),
                             reference_indices=reference_indices,
                         ),
-                        stdout=str(case_result.get("stdout", "")),
                     )
                 )
                 continue
             finalized.append(case_result)
         return finalized
+
+    def log_sf_round_done(*, global_sf_n: int, elapsed_ms: int, summary: dict) -> None:
+        debug_print(
+            f"[SF_ROUND_DONE] pid={pid} global_sf_n={global_sf_n} "
+            f"elapsed_ms={elapsed_ms} pass_count={summary['pass_count']} fail_count={summary['fail_count']}"
+        )
+
+    def log_check_testcases_done(*, global_sf_n: int, summary: dict) -> None:
+        debug_print(
+            f"[CHECK_TESTCASES_DONE] pid={pid} global_sf_n={global_sf_n} "
+            f"pass_count={summary['pass_count']} fail_count={summary['fail_count']}"
+        )
 
     testcase_failed = validate_testcase_shape(testcase)
     if testcase_failed:
@@ -426,6 +425,7 @@ def check_testcases(
     global_sf_n = SF_START
 
     while True:
+        round_start = time.perf_counter()
         debug_print(
             f"[SF_ROUND_START] pid={pid} global_sf_n={global_sf_n} "
             f"cases={len(sorted_cases)} target_ms={TARGET_RUNTIME_MS}"
@@ -444,9 +444,9 @@ def check_testcases(
                 global_sf_n=global_sf_n,
                 case_results=finalized_results,
             )
-            debug_print(
-                f"[CHECK_TESTCASES_DONE] pid={pid} pass_count={summary['pass_count']} fail_count={summary['fail_count']}"
-            )
+            elapsed_ms = int((time.perf_counter() - round_start) * 1000)
+            log_sf_round_done(global_sf_n=global_sf_n, elapsed_ms=elapsed_ms, summary=summary)
+            log_check_testcases_done(global_sf_n=global_sf_n, summary=summary)
             return summary
 
         if has_non_runtime_failure(case_results):
@@ -454,9 +454,9 @@ def check_testcases(
                 global_sf_n=global_sf_n,
                 case_results=case_results,
             )
-            debug_print(
-                f"[CHECK_TESTCASES_DONE] pid={pid} pass_count={summary['pass_count']} fail_count={summary['fail_count']}"
-            )
+            elapsed_ms = int((time.perf_counter() - round_start) * 1000)
+            log_sf_round_done(global_sf_n=global_sf_n, elapsed_ms=elapsed_ms, summary=summary)
+            log_check_testcases_done(global_sf_n=global_sf_n, summary=summary)
             return summary
 
         if global_sf_n >= MAX_GLOBAL_SF_N:
@@ -473,7 +473,6 @@ def check_testcases(
                     )
                     if case_result.get("status") == "pass"
                     else build_scale_not_reached_message(global_sf_n),
-                    stdout=str(case_result.get("stdout", "")),
                 )
                 for case_result in case_results
             ]
@@ -481,11 +480,16 @@ def check_testcases(
                 global_sf_n=global_sf_n,
                 case_results=finalized_results,
             )
-            debug_print(
-                f"[CHECK_TESTCASES_DONE] pid={pid} pass_count={summary['pass_count']} fail_count={summary['fail_count']}"
-            )
+            elapsed_ms = int((time.perf_counter() - round_start) * 1000)
+            log_sf_round_done(global_sf_n=global_sf_n, elapsed_ms=elapsed_ms, summary=summary)
+            log_check_testcases_done(global_sf_n=global_sf_n, summary=summary)
             return summary
+        elapsed_ms = int((time.perf_counter() - round_start) * 1000)
+        interim_summary = build_summary(
+            global_sf_n=global_sf_n,
+            case_results=case_results,
+        )
+        log_sf_round_done(global_sf_n=global_sf_n, elapsed_ms=elapsed_ms, summary=interim_summary)
         global_sf_n = choose_next_global_sf_n(global_sf_n, case_results)
         if global_sf_n > MAX_GLOBAL_SF_N:
             global_sf_n = MAX_GLOBAL_SF_N
-        debug_print(f"[SF_SEARCH_NEXT] pid={pid} next_global_sf_n={global_sf_n}")

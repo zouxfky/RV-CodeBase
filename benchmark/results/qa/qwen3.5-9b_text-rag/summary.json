@@ -1,0 +1,28 @@
+{
+  "method": "qwen3.5-9b_text-rag",
+  "num_questions": 1000,
+  "instruction": {
+    "faithfulness": "0.9442",
+    "accuracy": "0.8944",
+    "precision": "0.9856",
+    "f1": "0.9163"
+  },
+  "operand": {
+    "faithfulness": "0.8739",
+    "accuracy": "0.3133",
+    "precision": "0.8926",
+    "f1": "0.6265"
+  },
+  "intrinsic": {
+    "faithfulness": "0.7914",
+    "accuracy": "0.8663",
+    "precision": "0.8593",
+    "f1": "0.8009"
+  },
+  "overall": {
+    "faithfulness": "0.8685",
+    "accuracy": "0.6913",
+    "precision": "0.9155",
+    "f1": "0.7631"
+  }
+}

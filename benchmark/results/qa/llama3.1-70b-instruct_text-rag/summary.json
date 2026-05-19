@@ -1,0 +1,28 @@
+{
+  "method": "llama3.1-70b-instruct_text-rag",
+  "num_questions": 1000,
+  "instruction": {
+    "faithfulness": "0.9483",
+    "accuracy": "0.8953",
+    "precision": "0.9973",
+    "f1": "0.9280"
+  },
+  "operand": {
+    "faithfulness": "0.8612",
+    "accuracy": "0.3054",
+    "precision": "0.8913",
+    "f1": "0.7051"
+  },
+  "intrinsic": {
+    "faithfulness": "0.9234",
+    "accuracy": "0.8784",
+    "precision": "0.9084",
+    "f1": "0.8258"
+  },
+  "overall": {
+    "faithfulness": "0.9193",
+    "accuracy": "0.6931",
+    "precision": "0.9387",
+    "f1": "0.7702"
+  }
+}

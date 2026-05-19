@@ -1,0 +1,28 @@
+{
+  "method": "gpt-5.4_no-rag",
+  "num_questions": 1000,
+  "instruction": {
+    "faithfulness": null,
+    "accuracy": "0.9352",
+    "precision": "0.9845",
+    "f1": "0.9419"
+  },
+  "operand": {
+    "faithfulness": null,
+    "accuracy": "0.5450",
+    "precision": "0.8449",
+    "f1": "0.6822"
+  },
+  "intrinsic": {
+    "faithfulness": null,
+    "accuracy": "0.7797",
+    "precision": "0.8274",
+    "f1": "0.8022"
+  },
+  "overall": {
+    "faithfulness": null,
+    "accuracy": "0.7533",
+    "precision": "0.8909",
+    "f1": "0.7927"
+  }
+}

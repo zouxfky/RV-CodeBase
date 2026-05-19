@@ -1,0 +1,28 @@
+{
+  "method": "qwen3.6-35b-a3b_graph-rag",
+  "num_questions": 1000,
+  "instruction": {
+    "faithfulness": "0.9436",
+    "accuracy": "0.8624",
+    "precision": "0.9765",
+    "f1": "0.8836"
+  },
+  "operand": {
+    "faithfulness": "0.8964",
+    "accuracy": "0.2917",
+    "precision": "0.9227",
+    "f1": "0.6962"
+  },
+  "intrinsic": {
+    "faithfulness": "0.8324",
+    "accuracy": "0.8797",
+    "precision": "0.8731",
+    "f1": "0.8234"
+  },
+  "overall": {
+    "faithfulness": "0.8874",
+    "accuracy": "0.6780",
+    "precision": "0.9234",
+    "f1": "0.7514"
+  }
+}

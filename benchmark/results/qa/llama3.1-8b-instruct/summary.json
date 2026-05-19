@@ -1,0 +1,28 @@
+{
+  "method": "llama3.1-8b-instruct",
+  "num_questions": 992,
+  "instruction": {
+    "faithfulness": null,
+    "accuracy": "0.6200",
+    "precision": "0.8096",
+    "f1": "0.7799"
+  },
+  "operand": {
+    "faithfulness": null,
+    "accuracy": "0.0040",
+    "precision": "0.0273",
+    "f1": "0.0227"
+  },
+  "intrinsic": {
+    "faithfulness": null,
+    "accuracy": "0.3146",
+    "precision": "0.3996",
+    "f1": "0.3387"
+  },
+  "overall": {
+    "faithfulness": null,
+    "accuracy": "0.3129",
+    "precision": "0.4977",
+    "f1": "0.3708"
+  }
+}

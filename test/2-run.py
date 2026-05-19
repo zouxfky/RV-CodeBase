@@ -2,9 +2,11 @@ import argparse
 from contextlib import contextmanager
 import importlib.util
 import json
+import itertools
+import random
 import sys
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
 from tqdm import tqdm
@@ -13,6 +15,8 @@ from tqdm import tqdm
 CURRENT_DIR = Path(__file__).resolve().parent
 if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
+
+from _log import bind_pid_log_path, clear_pid_log_path, debug_print, set_log_enabled
 
 def load_script_module(module_name: str, path: Path):
     spec = importlib.util.spec_from_file_location(module_name, path)
@@ -30,8 +34,8 @@ DEBUG_API = load_script_module("test_debug_api", CURRENT_DIR / "2.2-debug.py")
 PARSER_API = load_script_module("test_parser_api", CURRENT_DIR / "_parser.py")
 
 append_jsonl = IO_API.append_jsonl
+iter_jsonl = IO_API.iter_jsonl
 load_pid_set = IO_API.load_pid_set
-read_jsonl = IO_API.read_jsonl
 write_session = SESSION_API.write_session
 validate_testcase_shape = PARSER_API.validate_testcase_shape
 
@@ -47,6 +51,7 @@ DEFAULT_DEBUG_TMP_DIR = TMP_DIR / "test_debug"
 DEFAULT_SESSION_DIR = TMP_DIR / "test_sessions"
 DEFAULT_CONFIG_PATH = ROOT_DIR / "llm_config.env"
 MAX_WORKERS = 32
+RANDOM_SHUFFLE_BUFFER_SIZE = 1024
 
 LLM_PRIORITY = {
     "repair_testcase": 0,
@@ -54,11 +59,6 @@ LLM_PRIORITY = {
     "generate_testcase": 2,
     "generate_program": 3,
 }
-
-
-def debug_print(message: str) -> None:
-    return None
-
 
 class LLMPriorityLimiter:
     def __init__(self, limit: int) -> None:
@@ -80,10 +80,6 @@ class LLMPriorityLimiter:
             "attempt": attempt,
             "seq": -1,
         }
-        debug_print(
-            f"[LLM_SLOT_WAIT] pid={pid} attempt={attempt} "
-            f"priority={priority_name} running={self.running}/{self.limit}"
-        )
         with self.condition:
             waiter["seq"] = self.next_seq
             self.next_seq += 1
@@ -95,21 +91,12 @@ class LLMPriorityLimiter:
                     self.running += 1
                     break
                 self.condition.wait()
-
-        debug_print(
-            f"[LLM_SLOT_ACQUIRED] pid={pid} attempt={attempt} "
-            f"priority={priority_name} running={self.running}/{self.limit}"
-        )
         try:
             yield
         finally:
             with self.condition:
                 self.running -= 1
                 self.condition.notify_all()
-            debug_print(
-                f"[LLM_SLOT_RELEASED] pid={pid} attempt={attempt} "
-                f"priority={priority_name} running={self.running}/{self.limit}"
-            )
 
 
 def build_testcase_repair_payload(*, testcase: list[dict], result_row: dict) -> tuple[list[dict], str]:
@@ -186,6 +173,70 @@ def accept_too_small_result_row(result_row: dict) -> dict:
     }
 
 
+def build_success_result_record(
+    *,
+    pid: str,
+    result_row: dict,
+    program_rounds: int,
+    testcase_rounds: int,
+    message: str = "",
+    error_type: str = "",
+) -> dict:
+    return {
+        "pid": pid,
+        "status": "success",
+        "stage": "testcase",
+        "error_type": error_type,
+        "message": message,
+        "program_rounds": program_rounds,
+        "testcase_rounds": testcase_rounds,
+        "global_sf_n": result_row.get("global_sf_n"),
+        "pass_count": result_row.get("pass_count"),
+        "fail_count": result_row.get("fail_count"),
+        "results": list(result_row.get("results", [])),
+    }
+
+
+def build_failure_result_record(
+    *,
+    pid: str,
+    stage: str,
+    error_type: str,
+    message: str,
+    program_rounds: int,
+    testcase_rounds: int,
+    result_row: dict | None,
+) -> dict:
+    if result_row is None:
+        return {
+            "pid": pid,
+            "status": "fail",
+            "stage": stage,
+            "error_type": error_type,
+            "message": message,
+            "program_rounds": program_rounds,
+            "testcase_rounds": testcase_rounds,
+            "global_sf_n": None,
+            "pass_count": None,
+            "fail_count": None,
+            "results": [],
+        }
+
+    return {
+        "pid": pid,
+        "status": "fail",
+        "stage": stage,
+        "error_type": error_type,
+        "message": message,
+        "program_rounds": program_rounds,
+        "testcase_rounds": testcase_rounds,
+        "global_sf_n": result_row.get("global_sf_n"),
+        "pass_count": result_row.get("pass_count"),
+        "fail_count": result_row.get("fail_count"),
+        "results": list(result_row.get("results", [])),
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", default=str(DEFAULT_INPUT_PATH))
@@ -203,8 +254,58 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--testcase-max-rounds", type=int, default=3)
     parser.add_argument("--llm-j", type=int, default=1)
     parser.add_argument("--run-j", type=int, default=1)
+    parser.add_argument("--log", action="store_true")
+    parser.add_argument("--random", action="store_true")
     parser.add_argument("-n", type=int, default=None)
     return parser.parse_args()
+
+
+def iter_pending_rows(
+    input_path: Path,
+    *,
+    completed_pids: set[str],
+    randomize: bool,
+):
+    def iter_filtered():
+        for row in iter_jsonl(input_path):
+            pid = str(row.get("pid", "")).strip()
+            if pid and pid not in completed_pids:
+                yield row
+
+    if not randomize:
+        yield from iter_filtered()
+        return
+
+    buffer: list[dict] = []
+    for row in iter_filtered():
+        buffer.append(row)
+        if len(buffer) >= RANDOM_SHUFFLE_BUFFER_SIZE:
+            random.shuffle(buffer)
+            while buffer:
+                yield buffer.pop()
+    if buffer:
+        random.shuffle(buffer)
+        while buffer:
+            yield buffer.pop()
+
+
+def count_pending_rows(
+    input_path: Path,
+    *,
+    completed_pids: set[str],
+    limit: int | None,
+    randomize: bool,
+) -> int:
+    count = 0
+    for _ in iter_pending_rows(
+        input_path,
+        completed_pids=completed_pids,
+        randomize=randomize,
+    ):
+        count += 1
+        if limit is not None and count >= max(0, limit):
+            break
+    return count
 
 
 def process_one_pid(
@@ -214,6 +315,9 @@ def process_one_pid(
 ) -> dict:
     pid = str(row.get("pid", "")).strip()
     code = str(row.get("code", ""))
+    log_dir = Path(args.log_dir)
+    if pid:
+        bind_pid_log_path(pid, log_dir / f"{pid}.log")
     debug_print(f"[PID_START] pid={pid or '<empty>'}")
     if not pid or not code.strip():
         return {
@@ -223,7 +327,6 @@ def process_one_pid(
             "message": "missing pid or code",
         }
 
-    log_dir = Path(args.log_dir)
     debug_tmp_dir = Path(args.debug_tmp_dir)
     session_dir = Path(args.session_dir)
     config_path = Path(args.config)
@@ -235,11 +338,14 @@ def process_one_pid(
     testcase: list[dict] = []
     last_error_type = ""
     last_message = ""
+    program_rounds = 0
+    testcase_rounds = 0
+    last_testcase_result_row: dict | None = None
 
     write_session(session_dir=session_dir, pid=pid, session_name="program", messages=program_messages)
-    debug_print(f"[PROGRAM_SESSION] pid={pid} initialized")
 
     for attempt in range(1, args.program_max_rounds + 1):
+        program_rounds = attempt
         try:
             if not program:
                 debug_print(f"[PROGRAM_GENERATE] pid={pid} attempt={attempt} start")
@@ -304,19 +410,26 @@ def process_one_pid(
             last_error_type = "program"
             last_message = str(exc)
             debug_print(f"[PROGRAM_EXCEPTION] pid={pid} attempt={attempt}")
-            debug_print(last_message)
+            debug_print(f"[PROGRAM_EXCEPTION_DETAIL] pid={pid} attempt={attempt} message={last_message}")
     else:
         return {
             "pid": pid,
             "success": False,
-            "error_type": last_error_type or "program",
-            "message": last_message or "program generation failed",
+            "result_row": build_failure_result_record(
+                pid=pid,
+                stage="program",
+                error_type=last_error_type or "program",
+                message=last_message or "program generation failed",
+                program_rounds=program_rounds,
+                testcase_rounds=testcase_rounds,
+                result_row=None,
+            ),
         }
 
     write_session(session_dir=session_dir, pid=pid, session_name="testcase", messages=testcase_messages)
-    debug_print(f"[TESTCASE_SESSION] pid={pid} initialized")
 
     for attempt in range(1, args.testcase_max_rounds + 1):
+        testcase_rounds = attempt
         try:
             had_existing_testcase = bool(testcase)
             if not testcase:
@@ -363,9 +476,7 @@ def process_one_pid(
             testcase = repaired_testcase
             write_session(session_dir=session_dir, pid=pid, session_name="testcase", messages=testcase_messages)
             debug_print(f"[TESTCASE_READY] pid={pid} attempt={attempt} cases={len(testcase)}")
-            debug_print(f"[RUN_SLOT_WAIT] pid={pid} attempt={attempt}")
             with args.run_semaphore:
-                debug_print(f"[RUN_SLOT_ACQUIRED] pid={pid} attempt={attempt}")
                 debug_print(f"[TESTCASE_CHECK] pid={pid} attempt={attempt} start")
                 result_row = DEBUG_API.check_testcases(
                     pid=pid,
@@ -379,6 +490,7 @@ def process_one_pid(
                     run_timeout=args.run_timeout,
                     bin_path=program_bin_path,
                 )
+            last_testcase_result_row = result_row
             fail_count = int(result_row.get("fail_count", 0))
             if fail_count == 0:
                 debug_print(f"[TESTCASE_CHECK_PASS] pid={pid} attempt={attempt}")
@@ -389,9 +501,14 @@ def process_one_pid(
                         "pid": pid,
                         "program": program,
                         "testcase": testcase,
-                        },
-                        "result_row": result_row,
-                    }
+                    },
+                    "result_row": build_success_result_record(
+                        pid=pid,
+                        result_row=result_row,
+                        program_rounds=program_rounds,
+                        testcase_rounds=testcase_rounds,
+                    ),
+                }
             if (
                 attempt == args.testcase_max_rounds
                 and had_existing_testcase
@@ -409,7 +526,14 @@ def process_one_pid(
                         "program": program,
                         "testcase": testcase,
                     },
-                    "result_row": accepted_result_row,
+                    "result_row": build_success_result_record(
+                        pid=pid,
+                        result_row=accepted_result_row,
+                        program_rounds=program_rounds,
+                        testcase_rounds=testcase_rounds,
+                        message="accepted only-too-small failures on final testcase round",
+                        error_type="accepted_too_small",
+                    ),
                 }
             last_error_type = "debug"
             _, last_message = build_testcase_repair_payload(
@@ -423,17 +547,25 @@ def process_one_pid(
             last_error_type = "testcase"
             last_message = str(exc)
             debug_print(f"[TESTCASE_EXCEPTION] pid={pid} attempt={attempt}")
-            debug_print(last_message)
+            debug_print(f"[TESTCASE_EXCEPTION_DETAIL] pid={pid} attempt={attempt} message={last_message}")
     return {
         "pid": pid,
         "success": False,
-        "error_type": last_error_type or "testcase",
-        "message": last_message or "testcase generation failed",
+        "result_row": build_failure_result_record(
+            pid=pid,
+            stage="testcase",
+            error_type=last_error_type or "testcase",
+            message=last_message or "testcase generation failed",
+            program_rounds=program_rounds,
+            testcase_rounds=testcase_rounds,
+            result_row=last_testcase_result_row,
+        ),
     }
 
 
 def main() -> int:
     args = parse_args()
+    set_log_enabled(bool(args.log))
     args.llm_j = max(1, int(args.llm_j))
     args.run_j = max(1, int(args.run_j))
     args.llm_limiter = LLMPriorityLimiter(args.llm_j)
@@ -441,41 +573,76 @@ def main() -> int:
 
     log_dir = Path(args.log_dir)
     Path(args.debug_tmp_dir).mkdir(parents=True, exist_ok=True)
-    log_dir.mkdir(parents=True, exist_ok=True)
+    if args.log:
+        log_dir.mkdir(parents=True, exist_ok=True)
     Path(args.session_dir).mkdir(parents=True, exist_ok=True)
 
-    seed_rows = read_jsonl(Path(args.input))
-    completed_pids = load_pid_set(Path(args.output))
-    pending_rows = [
-        row
-        for row in seed_rows
-        if str(row.get("pid", "")).strip()
-        and str(row.get("pid", "")).strip() not in completed_pids
-    ]
+    input_path = Path(args.input)
+    completed_pids = load_pid_set(Path(args.result_output)) | load_pid_set(Path(args.output))
+    pending_total = count_pending_rows(
+        input_path,
+        completed_pids=completed_pids,
+        limit=args.n,
+        randomize=args.random,
+    )
+    if pending_total <= 0:
+        debug_print("[RUN_NO_PENDING]")
+        return 0
+    debug_print(f"[RUN_PENDING] pending_total={pending_total}")
+
+    pending_iter = iter_pending_rows(
+        input_path,
+        completed_pids=completed_pids,
+        randomize=args.random,
+    )
     if args.n is not None:
-        pending_rows = pending_rows[: max(0, args.n)]
-    args.worker_j = max(1, min(MAX_WORKERS, len(pending_rows)))
+        pending_iter = itertools.islice(pending_iter, max(0, args.n))
+
+    args.worker_j = max(1, min(MAX_WORKERS, pending_total))
 
     with ThreadPoolExecutor(max_workers=args.worker_j) as executor:
-        future_map = {
-            executor.submit(process_one_pid, row=row, args=args): row for row in pending_rows
-        }
+        future_set: set = set()
+
+        def submit_next() -> bool:
+            try:
+                row = next(pending_iter)
+            except StopIteration:
+                return False
+            future_set.add(executor.submit(process_one_pid, row=row, args=args))
+            return True
+
+        for _ in range(args.worker_j):
+            if not submit_next():
+                break
+
         completed = 0
         pass_count = 0
         fail_count = 0
-        with tqdm(total=len(pending_rows), desc="pid", unit="pid") as progress:
+        with tqdm(total=pending_total, desc="pid", unit="pid") as progress:
             progress.set_postfix(pass_count=pass_count, fail_count=fail_count)
-            for future in as_completed(future_map):
-                result = future.result()
-                if result.get("success"):
-                    append_jsonl(Path(args.output), result["testcase_row"])
-                    append_jsonl(Path(args.result_output), result["result_row"])
-                    pass_count += 1
-                else:
-                    fail_count += 1
-                completed += 1
-                progress.set_postfix(pass_count=pass_count, fail_count=fail_count)
-                progress.update(1)
+            while future_set:
+                done, _ = wait(future_set, return_when=FIRST_COMPLETED)
+                for future in done:
+                    future_set.remove(future)
+                    result = future.result()
+                    if result.get("success"):
+                        append_jsonl(Path(args.output), result["testcase_row"])
+                        append_jsonl(Path(args.result_output), result["result_row"])
+                        pass_count += 1
+                        debug_print(f"[PID_DONE] pid={result.get('pid')} status=success")
+                    else:
+                        append_jsonl(Path(args.result_output), result["result_row"])
+                        fail_count += 1
+                        debug_print(
+                            f"[PID_DONE] pid={result.get('pid')} status=fail "
+                            f"error_type={result['result_row'].get('error_type', '')} "
+                            f"message={result['result_row'].get('message', '')}"
+                        )
+                    clear_pid_log_path(str(result.get("pid", "")))
+                    completed += 1
+                    progress.set_postfix(pass_count=pass_count, fail_count=fail_count)
+                    progress.update(1)
+                    submit_next()
     return 0
 
 

@@ -7,9 +7,6 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Local config and secrets
-llm_config.env
-
 # Runtime artifacts
 tmp/
 
@@ -18,3 +15,4 @@ source/
 
 # Data
 data/
+out/

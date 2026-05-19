@@ -14,7 +14,7 @@ PROMPTS_DIR = SRC_DIR / "prompts"
 CONFIG_PATH = SRC_DIR / "llm_config.env"
 INPUT_PATH = DATA_DIR / "merge_dedupe_classify.jsonl"
 OUTPUT_PATH = DATA_DIR / "merge_dedupe_classify_transform.jsonl"
-PROMPT_PATH = PROMPTS_DIR / "transform.md"
+PROMPT_PATH = PROMPTS_DIR / "1-transform.md"
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are an expert code transformation agent. "

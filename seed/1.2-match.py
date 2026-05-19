@@ -16,7 +16,7 @@ PROMPTS_DIR = SRC_DIR / "prompts"
 CONFIG_PATH = SRC_DIR / "llm_config.env"
 MERGE_PATH = DATA_DIR / "merge.jsonl"
 EMBEDDINGS_PATH = DATA_DIR / "embeddings.jsonl"
-PROMPT_PATH = PROMPTS_DIR / "match.md"
+PROMPT_PATH = PROMPTS_DIR / "1-match.md"
 COMPLETED_PATH = DATA_DIR / "match.jsonl"
 
 TOP_K = 10

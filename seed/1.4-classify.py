@@ -14,8 +14,8 @@ PROMPTS_DIR = SRC_DIR / "prompts"
 CONFIG_PATH = SRC_DIR / "llm_config.env"
 INPUT_PATH = DATA_DIR / "merge_dedupe.jsonl"
 OUTPUT_PATH = DATA_DIR / "merge_dedupe_classify.jsonl"
-PROMPT_PATH = PROMPTS_DIR / "classify_category.md"
-RULE_PATH = PROMPTS_DIR / "classify_rule.md"
+PROMPT_PATH = PROMPTS_DIR / "1-classify-category.md"
+RULE_PATH = PROMPTS_DIR / "1-classify-rule.md"
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are a strict classifier. "

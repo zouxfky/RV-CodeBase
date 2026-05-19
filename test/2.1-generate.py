@@ -23,8 +23,8 @@ def load_script_module(module_name: str, path: Path):
 
 IO_API = load_script_module("test_generate_io_api", CURRENT_DIR / "_io.py")
 PARSER_API = load_script_module("test_generate_parser_api", CURRENT_DIR / "_parser.py")
+from _log import debug_print
 
-write_raw_log = IO_API.write_raw_log
 parse_program_response = PARSER_API.parse_program_response
 parse_testcase_response = PARSER_API.parse_testcase_response
 
@@ -32,16 +32,12 @@ parse_testcase_response = PARSER_API.parse_testcase_response
 ROOT_DIR = CURRENT_DIR.parent
 PROMPTS_DIR = ROOT_DIR / "prompts"
 CONFIG_PATH = ROOT_DIR / "llm_config.env"
-PROGRAM_GENERATE_PROMPT = PROMPTS_DIR / "program_generate.md"
-PROGRAM_REPAIR_PROMPT = PROMPTS_DIR / "program_repair.md"
-TESTCASE_GENERATE_PROMPT = PROMPTS_DIR / "testcase_generate.md"
-TESTCASE_REPAIR_PROMPT = PROMPTS_DIR / "testcase_repair.md"
+PROGRAM_GENERATE_PROMPT = PROMPTS_DIR / "2-program-generate.md"
+PROGRAM_REPAIR_PROMPT = PROMPTS_DIR / "2-program-repair.md"
+TESTCASE_GENERATE_PROMPT = PROMPTS_DIR / "2-testcase-generate.md"
+TESTCASE_REPAIR_PROMPT = PROMPTS_DIR / "2-testcase-repair.md"
 
 _CLIENT_CACHE: dict[tuple[str, str, int], OpenAI] = {}
-
-
-def debug_print(message: str) -> None:
-    return None
 
 
 def render_prompt(template: str, **kwargs: str) -> str:
@@ -138,7 +134,6 @@ def call_llm(
     text = response.choices[0].message.content or ""
     debug_print(f"[LLM_CALL_DONE] pid={pid} phase={phase} attempt={attempt} chars={len(text)}")
 
-    write_raw_log(log_dir, pid, phase, attempt, text)
     updated_messages = list(messages) + [{"role": "assistant", "content": text}]
     return text, updated_messages
 
@@ -156,7 +151,6 @@ def generate_program(
     log_dir: Path,
     attempt: int,
 ) -> dict:
-    debug_print(f"[GENERATE_PROGRAM] pid={pid} attempt={attempt}")
     prompt = load_prompt_text(PROGRAM_GENERATE_PROMPT)
     user_content = render_prompt(prompt, pid=pid, code=code)
     text, updated_messages = call_llm(
@@ -185,7 +179,6 @@ def repair_program(
     log_dir: Path,
     attempt: int,
 ) -> dict:
-    debug_print(f"[REPAIR_PROGRAM] pid={pid} attempt={attempt}")
     prompt = load_prompt_text(PROGRAM_REPAIR_PROMPT)
     user_content = render_prompt(
         prompt,
@@ -219,7 +212,6 @@ def generate_testcase(
     log_dir: Path,
     attempt: int,
 ) -> dict:
-    debug_print(f"[GENERATE_TESTCASE] pid={pid} attempt={attempt}")
     prompt = load_prompt_text(TESTCASE_GENERATE_PROMPT)
     user_content = render_prompt(prompt, pid=pid, code=code, program=program)
     text, updated_messages = call_llm(
@@ -249,7 +241,6 @@ def repair_testcase(
     log_dir: Path,
     attempt: int,
 ) -> dict:
-    debug_print(f"[REPAIR_TESTCASE] pid={pid} attempt={attempt}")
     prompt = load_prompt_text(TESTCASE_REPAIR_PROMPT)
     user_content = render_prompt(
         prompt,

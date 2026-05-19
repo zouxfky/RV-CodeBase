@@ -1,0 +1,28 @@
+{
+  "method": "qwen3.5-9b",
+  "num_questions": 994,
+  "instruction": {
+    "faithfulness": null,
+    "accuracy": "0.6212",
+    "precision": "0.7023",
+    "f1": "0.6234"
+  },
+  "operand": {
+    "faithfulness": null,
+    "accuracy": "0.0032",
+    "precision": "0.0258",
+    "f1": "0.0192"
+  },
+  "intrinsic": {
+    "faithfulness": null,
+    "accuracy": "0.2516",
+    "precision": "0.4566",
+    "f1": "0.3590"
+  },
+  "overall": {
+    "faithfulness": null,
+    "accuracy": "0.2920",
+    "precision": "0.5752",
+    "f1": "0.3592"
+  }
+}

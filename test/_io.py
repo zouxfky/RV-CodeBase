@@ -58,7 +58,7 @@ def write_raw_log(
 
 def load_pid_set(path: Path) -> set[str]:
     pids: set[str] = set()
-    for row in read_jsonl(path):
+    for row in iter_jsonl(path):
         pid = str(row.get("pid", "")).strip()
         if pid:
             pids.add(pid)
@@ -67,7 +67,7 @@ def load_pid_set(path: Path) -> set[str]:
 
 def load_pid_map(path: Path) -> dict[str, dict]:
     mapping: dict[str, dict] = {}
-    for row in read_jsonl(path):
+    for row in iter_jsonl(path):
         pid = str(row.get("pid", "")).strip()
         if pid:
             mapping[pid] = row

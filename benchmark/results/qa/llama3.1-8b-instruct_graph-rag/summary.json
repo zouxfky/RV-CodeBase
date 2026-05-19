@@ -1,0 +1,28 @@
+{
+  "method": "llama3.1-8b-instruct_graph-rag",
+  "num_questions": 999,
+  "instruction": {
+    "faithfulness": "0.9770",
+    "accuracy": "0.8593",
+    "precision": "0.9914",
+    "f1": "0.8805"
+  },
+  "operand": {
+    "faithfulness": "0.9260",
+    "accuracy": "0.3028",
+    "precision": "0.9347",
+    "f1": "0.6610"
+  },
+  "intrinsic": {
+    "faithfulness": "0.9519",
+    "accuracy": "0.8178",
+    "precision": "0.8983",
+    "f1": "0.7763"
+  },
+  "overall": {
+    "faithfulness": "0.9576",
+    "accuracy": "0.6600",
+    "precision": "0.9444",
+    "f1": "0.7326"
+  }
+}

@@ -20,6 +20,7 @@ if str(CURRENT_DIR) not in sys.path:
 
 import _bench
 import _records
+import _remote
 import _session
 
 
@@ -437,6 +438,7 @@ def main() -> int:
                     immediate_completions = 0
                 submit_llm()
                 submit_debug()
+    _remote.close_remote_clients()
     print_failure_summary(completed_rows)
     return 0
 

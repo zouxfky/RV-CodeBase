@@ -1,5 +1,6 @@
 #!/bin/sh
 set -u
+ulimit -c 0 2>/dev/null || true
 
 RESULT_PATH="${1:-result.json}"
 
@@ -14,6 +15,9 @@ if [ ! -f "./runner_config.sh" ]; then
 fi
 
 . ./runner_config.sh
+OUTPUT_LIMIT_BYTES="${OUTPUT_LIMIT_BYTES:-10485760}"
+OUTPUT_LIMIT_BLOCKS="$(( (OUTPUT_LIMIT_BYTES + 511) / 512 ))"
+REMOTE_NICE="${REMOTE_NICE:-10}"
 
 json_escape_file() {
   if [ ! -f "$1" ]; then
@@ -140,28 +144,14 @@ build_runtime_message() {
   err_file="$1"
   out_file="$2"
   message_file="$3"
-  err_excerpt="$message_file.err"
-  out_excerpt="$message_file.out"
-
-  write_excerpt_file "$err_file" "$err_excerpt" 600
-  write_excerpt_file "$out_file" "$out_excerpt" 600
-  {
-    if [ -s "$err_excerpt" ]; then
-      printf 'stderr:\n'
-      cat "$err_excerpt"
-      if [ -s "$out_excerpt" ]; then
-        printf '\n'
-      fi
+  if [ -f "$out_file" ]; then
+    out_bytes="$(wc -c < "$out_file" | tr -d '[:space:]')"
+    if [ "${out_bytes:-0}" -ge "${OUTPUT_LIMIT_BYTES:-10485760}" ]; then
+      printf 'output exceeded limit of %s bytes' "$OUTPUT_LIMIT_BYTES" > "$message_file"
+      return 0
     fi
-    if [ -s "$out_excerpt" ]; then
-      printf 'stdout:\n'
-      cat "$out_excerpt"
-    fi
-    if [ ! -s "$err_excerpt" ] && [ ! -s "$out_excerpt" ]; then
-      printf 'process exited with non-zero status'
-    fi
-  } > "$message_file"
-  rm -f "$err_excerpt" "$out_excerpt"
+  fi
+  printf 'process exited with non-zero status' > "$message_file"
 }
 
 build_wrong_answer_message() {
@@ -169,23 +159,11 @@ build_wrong_answer_message() {
   expected_file="$2"
   actual_file="$3"
   message_file="$4"
-  expected_excerpt="$message_file.expected"
-  actual_excerpt="$message_file.actual"
-
-  write_excerpt_file "$expected_file" "$expected_excerpt" 400
-  write_excerpt_file "$actual_file" "$actual_excerpt" 400
-  {
-    if [ -f "$compare_file" ]; then
-      cat "$compare_file"
-    else
-      printf 'output mismatch'
-    fi
-    printf '\nexpected excerpt:\n'
-    cat "$expected_excerpt"
-    printf '\nactual excerpt:\n'
-    cat "$actual_excerpt"
-  } > "$message_file"
-  rm -f "$expected_excerpt" "$actual_excerpt"
+  if [ -f "$compare_file" ]; then
+    cat "$compare_file" > "$message_file"
+  else
+    printf 'output mismatch' > "$message_file"
+  fi
 }
 
 write_fail_result() {
@@ -207,10 +185,39 @@ compile_one() {
   bin="$2"
   err="$3"
   if command -v timeout >/dev/null 2>&1; then
-    sh -c "timeout '$COMPILE_TIMEOUT' $COMPILE_CMD '$src' -o '$bin' ${COMPILE_TAIL:-}" 2> "$err"
+    sh -c "timeout '$COMPILE_TIMEOUT' nice -n '$REMOTE_NICE' $COMPILE_CMD '$src' -o '$bin' ${COMPILE_TAIL:-}" 2> "$err"
   else
-    sh -c "$COMPILE_CMD '$src' -o '$bin' ${COMPILE_TAIL:-}" 2> "$err"
+    sh -c "nice -n '$REMOTE_NICE' $COMPILE_CMD '$src' -o '$bin' ${COMPILE_TAIL:-}" 2> "$err"
   fi
+}
+
+compile_baseline_one() {
+  src="$1"
+  bin="$2"
+  err="$3"
+  cache_root="${BASELINE_CACHE_ROOT:-/tmp/rv_opt_baseline_cache}"
+  if command -v sha256sum >/dev/null 2>&1; then
+    cache_key="$( (printf '%s\n' "$COMPILE_CMD ${COMPILE_TAIL:-}"; cat "$src") | sha256sum | awk '{print $1}' )"
+  else
+    cache_key="$( (printf '%s\n' "$COMPILE_CMD ${COMPILE_TAIL:-}"; cat "$src") | cksum | awk '{print $1 "_" $2}' )"
+  fi
+  cache_bin="$cache_root/$cache_key.bin"
+
+  if [ -x "$cache_bin" ]; then
+    cp "$cache_bin" "$bin"
+    chmod +x "$bin" 2>/dev/null || true
+    : > "$err"
+    return 0
+  fi
+
+  mkdir -p "$cache_root" 2>/dev/null || true
+  compile_one "$src" "$bin" "$err"
+  rc="$?"
+  if [ "$rc" -eq 0 ] && [ -x "$bin" ] && [ -d "$cache_root" ]; then
+    tmp_cache="$cache_bin.$$"
+    cp "$bin" "$tmp_cache" 2>/dev/null && chmod +x "$tmp_cache" 2>/dev/null && mv "$tmp_cache" "$cache_bin" 2>/dev/null || rm -f "$tmp_cache"
+  fi
+  return "$rc"
 }
 
 case "${REMOTE_WALL_GUARD:-0}" in
@@ -230,7 +237,7 @@ case "${REMOTE_WALL_GUARD:-0}" in
     ;;
 esac
 
-compile_one baseline.cpp ./baseline.bin baseline.compile.err
+compile_baseline_one baseline.cpp ./baseline.bin baseline.compile.err
 baseline_compile_rc="$?"
 if [ "$baseline_compile_rc" -ne 0 ]; then
   write_fail_result "compile" "baseline_compile" baseline.compile.err
@@ -256,7 +263,15 @@ while IFS="$(printf '\t')" read -r testcase_index input_file; do
     input_path="$2"
     prefix="$3"
     start_ms="$(now_ms)"
-    run_with_timeout "$RUN_TIMEOUT" "$bin_path" < "$input_path" > "$prefix.out" 2> "$prefix.err"
+    if [ "${OUTPUT_LIMIT_BLOCKS:-0}" -gt 0 ]; then
+      run_with_timeout "$RUN_TIMEOUT" sh -c '
+        ulimit -c 0 2>/dev/null || true
+        ulimit -f "$1" 2>/dev/null || true
+        exec nice -n "$5" "$2" < "$3" > "$4.out" 2> "$4.err"
+      ' sh "$OUTPUT_LIMIT_BLOCKS" "$bin_path" "$input_path" "$prefix" "$REMOTE_NICE"
+    else
+      run_with_timeout "$RUN_TIMEOUT" nice -n "$REMOTE_NICE" "$bin_path" < "$input_path" > "$prefix.out" 2> "$prefix.err"
+    fi
     rc="$?"
     end_ms="$(now_ms)"
     awk "BEGIN { printf \"%.6f\", $end_ms - $start_ms }" > "$prefix.time"

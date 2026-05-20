@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import atexit
+import hashlib
 import json
 import re
 import socket
@@ -42,6 +45,21 @@ def remote_job_name(*, pid: str, attempt: int) -> str:
     return f"{safe_name(pid)}.round_{attempt}.{int(time.time() * 1000)}"
 
 
+def directory_hash(path: Path) -> str:
+    digest = hashlib.sha256()
+    for child in sorted(path.rglob("*")):
+        if not child.is_file():
+            continue
+        rel = child.relative_to(path).as_posix()
+        digest.update(rel.encode("utf-8"))
+        digest.update(b"\0")
+        with child.open("rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                digest.update(chunk)
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def _load_ssh_config(host: str) -> dict[str, Any]:
     if paramiko is None:
         raise RuntimeError("paramiko is required for remote execution; install dependencies from requirements.txt")
@@ -55,6 +73,18 @@ def _load_ssh_config(host: str) -> dict[str, Any]:
     return ssh_config.lookup(host)
 
 
+def parse_ssh_target(target: str) -> tuple[str | None, str]:
+    value = str(target).strip()
+    if not value:
+        raise ValueError("remote host is empty")
+    if "@" not in value:
+        return None, value
+    username, host = value.rsplit("@", 1)
+    if not username or not host:
+        raise ValueError(f"invalid remote host: {target}")
+    return username, host
+
+
 class RemoteClient:
     def __init__(self, *, host: str, connect_timeout: int = 30) -> None:
         if paramiko is None:
@@ -65,9 +95,10 @@ class RemoteClient:
         self.sftp: Any | None = None
 
     def connect(self) -> None:
-        config = _load_ssh_config(self.host)
-        hostname = str(config.get("hostname") or self.host)
-        username = config.get("user")
+        target_user, target_host = parse_ssh_target(self.host)
+        config = _load_ssh_config(target_host)
+        hostname = str(config.get("hostname") or target_host)
+        username = target_user or config.get("user")
         port = int(config.get("port") or 22)
         identity_files = config.get("identityfile")
         if isinstance(identity_files, str):
@@ -300,3 +331,143 @@ def run_remote_job(
     finally:
         if upload_dir.exists():
             shutil.rmtree(upload_dir)
+
+
+def run_remote_jobs_batch(
+    *,
+    host: str,
+    remote_root: str,
+    jobs: list[dict],
+    timeout: int,
+) -> dict[str, dict]:
+    if not REMOTE_RUNNER_PATH.exists():
+        raise ValueError(f"missing remote runner: {REMOTE_RUNNER_PATH}")
+    if not jobs:
+        return {}
+
+    batch_name = f"batch.{int(time.time() * 1000)}.{threading.get_ident()}"
+    batch_upload = Path(jobs[0]["local_job_dir"]).parent / batch_name
+    if batch_upload.exists():
+        shutil.rmtree(batch_upload)
+    batch_upload.mkdir(parents=True, exist_ok=True)
+
+    job_names: list[str] = []
+    try:
+        root = validate_remote_root(remote_root)
+        static_root = f"{root}/_static"
+        client = get_thread_remote_client(host=host, connect_timeout=min(30, max(1, timeout)))
+
+        for job in jobs:
+            local_job_dir = Path(job["local_job_dir"])
+            local_static_dir = Path(job["local_static_dir"])
+            local_job_dir.mkdir(parents=True, exist_ok=True)
+            if not local_static_dir.is_dir():
+                raise ValueError(f"missing local static dir: {local_static_dir}")
+            shutil.copy2(REMOTE_RUNNER_PATH, local_static_dir / "_remote.sh")
+            static_hash = directory_hash(local_static_dir)[:16]
+            static_name = f"{safe_name(str(job['pid']))}.{static_hash}"
+            remote_static_dir = f"{static_root}/{static_name}"
+            returncode, _, _ = client.exec(
+                f"test -f {shlex.quote(remote_static_dir + '/.ready')}",
+                timeout=min(30, max(1, timeout)),
+            )
+            if returncode != 0:
+                remote_static_stage = f"/tmp/static.{static_name}.{int(time.time() * 1000)}"
+                cleanup_static_stage = f"rm -rf {shlex.quote(remote_static_stage)}"
+                client.exec(cleanup_static_stage, timeout=min(30, max(1, timeout)))
+                client.put_dir(local_static_dir, remote_static_stage)
+                install_static = (
+                    f"mkdir -p {shlex.quote(static_root)}; "
+                    f"rm -rf {shlex.quote(remote_static_dir)}; "
+                    f"mv {shlex.quote(remote_static_stage)} {shlex.quote(remote_static_dir)}; "
+                    f"touch {shlex.quote(remote_static_dir + '/.ready')}"
+                )
+                returncode, stdout, stderr = client.exec(install_static, timeout=min(60, max(1, timeout)))
+                if returncode != 0:
+                    raise RuntimeError(stderr.strip() or stdout.strip() or f"remote static install failed with {returncode}")
+
+            job_name = remote_job_name(pid=str(job["pid"]), attempt=int(job["attempt"]))
+            job["remote_job_name"] = job_name
+            job["remote_static_name"] = static_name
+            job_names.append(job_name)
+            optimized_src = local_job_dir / "optimized.cpp"
+            if not optimized_src.is_file():
+                raise ValueError(f"missing optimized.cpp: {optimized_src}")
+            job_upload_dir = batch_upload / job_name
+            job_upload_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(optimized_src, job_upload_dir / "optimized.cpp")
+
+        manifest_lines = [
+            f"{job['remote_job_name']}\t{job['remote_static_name']}"
+            for job in jobs
+        ]
+        (batch_upload / "manifest.tsv").write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
+        remote_stage_dir = f"/tmp/{batch_name}"
+        remote_dir = f"{root}/{batch_name}"
+
+        cleanup_stage_command = f"rm -rf {shlex.quote(remote_stage_dir)}"
+        returncode, stdout, stderr = client.exec(cleanup_stage_command, timeout=min(30, max(1, timeout)))
+        if returncode != 0:
+            raise RuntimeError(stderr.strip() or stdout.strip() or f"remote batch stage cleanup failed with {returncode}")
+
+        client.put_dir(batch_upload, remote_stage_dir)
+        names_text = " ".join(shlex.quote(name) for name in job_names)
+        move_command = (
+            f"mkdir -p {shlex.quote(root)}; "
+            f"rm -rf {shlex.quote(remote_dir)}; "
+            f"mv {shlex.quote(remote_stage_dir)} {shlex.quote(remote_dir)}; "
+        )
+        cleanup_command = (
+            f"rm -rf {shlex.quote(remote_dir)}; "
+            f"rm -rf {shlex.quote(remote_stage_dir)}"
+        )
+        fallback_json = shlex.quote(
+            '{"pid":"","status":"fail","stage":"remote","error_type":"remote_runner","message":"remote runner exited without result.json","global_sf_n":null,"baseline_time_ms":0.0,"optimized_time_ms":0.0,"speedup_ratio":0.0,"baseline_times_ms":[],"optimized_times_ms":[],"cases":[]}\n'
+        )
+        remote_command = (
+            "set -u; "
+            + move_command
+            + f"cd {shlex.quote(remote_dir)}; "
+            + f"static_root={shlex.quote(static_root)}; "
+            + "while IFS='	' read -r job static_name; do "
+            + "[ -z \"$job\" ] && continue; "
+            + "rm -rf \"$job.run\"; "
+            + "cp -a \"$static_root/$static_name\" \"$job.run\"; "
+            + "cp \"$job/optimized.cpp\" \"$job.run/optimized.cpp\"; "
+            + "(cd \"$job.run\" && chmod +x _remote.sh && ./_remote.sh result.json || true; "
+            + "if [ ! -f result.json ]; then printf "
+            + fallback_json
+            + " > result.json; fi) & "
+            + "done < manifest.tsv; "
+            + "wait; "
+            + f"jobs='{names_text}'; "
+            + "for job in $jobs; do "
+            + "printf '%s\\t' \"$job\"; "
+            + "cat \"$job.run/result.json\" 2>/dev/null || printf "
+            + fallback_json
+            + "; "
+            + "printf '\\n'; "
+            + "done; "
+            + "cd /tmp; "
+            + cleanup_command
+            + "; exit 0"
+        )
+        returncode, stdout, stderr = client.exec(remote_command, timeout=timeout)
+        if returncode != 0:
+            raise RuntimeError(stderr.strip() or stdout.strip() or f"remote batch runner failed with {returncode}")
+
+        results: dict[str, dict] = {}
+        for line in stdout.splitlines():
+            if not line.strip():
+                continue
+            if "\t" not in line:
+                continue
+            job_name, text = line.split("\t", 1)
+            data = json.loads(text)
+            if not isinstance(data, dict):
+                raise ValueError("remote batch result must contain JSON objects")
+            results[job_name] = data
+        return results
+    finally:
+        if batch_upload.exists():
+            shutil.rmtree(batch_upload)

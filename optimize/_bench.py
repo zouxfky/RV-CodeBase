@@ -100,14 +100,14 @@ def is_successful_speedup(debug_result: dict) -> bool:
 
 
 def compact_debug_result(debug_result: dict, *, max_output_chars: int = 500) -> dict:
-    compact = dict(debug_result)
-    cases = []
-    for case in compact.get("cases", []):
-        item = dict(case)
-        for key in ("baseline_output", "optimized_output", "stderr"):
-            value = item.get(key)
-            if isinstance(value, str) and len(value) > max_output_chars:
-                item[key] = value[:max_output_chars] + "\n...[truncated]..."
-        cases.append(item)
-    compact["cases"] = cases
+    compact = {
+        "status": str(debug_result.get("status", "")).strip() or "fail",
+        "stage": str(debug_result.get("stage", "")),
+        "error_type": str(debug_result.get("error_type", "")),
+        "message": str(debug_result.get("message", ""))[:max_output_chars],
+        "global_sf_n": debug_result.get("global_sf_n"),
+        "baseline_time_ms": float(debug_result.get("baseline_time_ms") or 0.0),
+        "optimized_time_ms": float(debug_result.get("optimized_time_ms") or 0.0),
+        "speedup_ratio": float(debug_result.get("speedup_ratio") or 0.0),
+    }
     return json.loads(json.dumps(compact, ensure_ascii=False))

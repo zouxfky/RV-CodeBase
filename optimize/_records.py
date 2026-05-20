@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import random
 import threading
@@ -133,7 +135,21 @@ def load_optimize_context(
     seed_row = load_pid_map(seed_path).get(pid)
     output_row = load_pid_map(output_path).get(pid)
     testcase_row = load_pid_map(testcase_path).get(pid)
+    return build_optimize_context_from_rows(
+        pid=pid,
+        seed_row=seed_row,
+        output_row=output_row,
+        testcase_row=testcase_row,
+    )
 
+
+def build_optimize_context_from_rows(
+    *,
+    pid: str,
+    seed_row: dict | None,
+    output_row: dict | None,
+    testcase_row: dict | None,
+) -> dict:
     if seed_row is None:
         raise ValueError(f"missing seed row for pid={pid}")
     if output_row is None:
@@ -156,6 +172,7 @@ def load_optimize_context(
         global_sf_n = int(output_row.get("global_sf_n"))
     except Exception as exc:
         raise ValueError(f"invalid global_sf_n for pid={pid}") from exc
+    global_sf_n = max(1, global_sf_n // 5)
 
     return {
         "pid": pid,
@@ -167,35 +184,34 @@ def load_optimize_context(
     }
 
 
-def build_success_row(
+def build_result_row(
     *,
     pid: str,
-    rounds: int,
-    best_round: int,
-    best_speedup_ratio: float,
-    baseline_time_ms: float,
-    optimized_time_ms: float,
-    global_sf_n: int,
+    status: str,
+    stage: str,
+    round: int,
+    best: int,
+    speedup: float,
+    baseline: float,
+    optimized: float,
+    sf: int,
     code: str,
     message: str,
-    debug_row: dict,
+    history: list[dict],
 ) -> dict:
     return {
         "pid": pid,
-        "status": "success",
-        "rounds": rounds,
-        "best_round": best_round,
-        "best_speedup_ratio": best_speedup_ratio,
-        "baseline_time_ms": baseline_time_ms,
-        "optimized_time_ms": optimized_time_ms,
-        "global_sf_n": global_sf_n,
-        "correctness": {
-            "status": "pass",
-            "cases": len(debug_row.get("cases", [])),
-        },
+        "status": status,
+        "stage": stage,
+        "round": round,
+        "best": best,
+        "speedup": speedup,
+        "baseline": baseline,
+        "optimized": optimized,
+        "sf": sf,
         "code": code,
         "message": message,
-        "debug": debug_row,
+        "history": history,
     }
 
 def build_failure_row(
@@ -208,13 +224,26 @@ def build_failure_row(
     code: str = "",
     debug_row: dict | None = None,
 ) -> dict:
-    return {
-        "pid": pid,
-        "status": "fail",
-        "rounds": rounds,
-        "stage": stage,
-        "error_type": error_type,
-        "message": message,
-        "code": code,
-        "debug": debug_row or {},
-    }
+    return build_result_row(
+        pid=pid,
+        status="fail",
+        stage=stage,
+        round=rounds,
+        best=0,
+        speedup=0.0,
+        baseline=0.0,
+        optimized=0.0,
+        sf=0,
+        code=code,
+        message=message,
+        history=[
+            {
+                "round": rounds,
+                "status": "fail",
+                "speedup": 0.0,
+                "baseline": 0.0,
+                "optimized": 0.0,
+                "message": f"{stage}: {message}" if stage else message,
+            }
+        ] if rounds else [],
+    )

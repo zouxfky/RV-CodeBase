@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-import concurrent.futures
 import json
 import re
 import sys
@@ -11,24 +10,29 @@ METHOD_DIR = Path(__file__).resolve().parent
 BENCHMARK_DIR = METHOD_DIR.parents[1]
 REPO_DIR = BENCHMARK_DIR.parent
 OPTIMIZE_DIR = REPO_DIR / "optimize"
+METHODS_DIR = BENCHMARK_DIR / "methods"
 
 DEFAULT_DATASET = BENCHMARK_DIR / "datasets/tsvc.jsonl"
 DEFAULT_OUTPUT = BENCHMARK_DIR / "results/tsvc/default/results.jsonl"
 DEFAULT_CONFIG = REPO_DIR / "llm_config.env"
 DEFAULT_TMP_DIR = REPO_DIR / "tmp/benchmark_tsvc"
+DEFAULT_SESSION_DIR = REPO_DIR / "tmp/benchmark_tsvc_sessions"
 
-GENERATE_PROMPT = METHOD_DIR / "generate.md"
-REPAIR_PROMPT = METHOD_DIR / "repair.md"
-IMPROVE_PROMPT = METHOD_DIR / "improve.md"
+COMMON_PROMPT_DIR = BENCHMARK_DIR / "common" / "prompts"
+GENERATE_PROMPT = COMMON_PROMPT_DIR / "generate.md"
+REPAIR_PROMPT = COMMON_PROMPT_DIR / "repair.md"
+IMPROVE_PROMPT = COMMON_PROMPT_DIR / "improve.md"
 
 if str(BENCHMARK_DIR) not in sys.path:
     sys.path.insert(0, str(BENCHMARK_DIR))
 if str(OPTIMIZE_DIR) not in sys.path:
     sys.path.insert(0, str(OPTIMIZE_DIR))
+if str(METHODS_DIR) not in sys.path:
+    sys.path.insert(0, str(METHODS_DIR))
 
 from common.io import read_jsonl, write_jsonl  # noqa: E402
 import _bench  # noqa: E402
-import _remote  # noqa: E402
+import _local  # noqa: E402
 
 
 DRIVER_INCLUDE_MARKER = '#include "array_defs.h"\n'
@@ -45,18 +49,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--config", default=str(DEFAULT_CONFIG))
     parser.add_argument("--tmp-dir", default=str(DEFAULT_TMP_DIR))
-    parser.add_argument("--remote-host", default="sg2044")
-    parser.add_argument("--ssh-password", default="")
-    parser.add_argument("--remote-root", default="/tmp/benchmark_tsvc")
+    parser.add_argument("--session-dir", default=str(DEFAULT_SESSION_DIR))
     parser.add_argument(
         "--compile-cmd",
         default="gcc -x c -std=gnu11 -O3 -march=rv64gcv -mabi=lp64d -I. common.c dummy.c globals.c -lm",
     )
     parser.add_argument("--compile-timeout", type=int, default=120)
     parser.add_argument("--run-timeout", type=int, default=240)
-    parser.add_argument("--ssh-timeout", type=int, default=900)
+    parser.add_argument("--wall-timeout", type=int, default=900)
     parser.add_argument("--max-rounds", type=int, default=3)
-    parser.add_argument("-j", "--jobs", type=int, default=1)
+    parser.add_argument("--llm-j", type=int, default=1)
+    parser.add_argument("--run-j", type=int, default=1)
     parser.add_argument("-n", type=int, default=None)
     return parser.parse_args()
 
@@ -186,10 +189,7 @@ def build_generate_prompt(row: dict) -> str:
     template = load_prompt(GENERATE_PROMPT)
     return render_prompt(
         template,
-        sample_id=str(row["id"]),
-        target_name=primary_function_name(str(row["code"])),
         baseline_code=kernel_block(row),
-        driver_code=transform_driver(str(row["driver_code"])),
     )
 
 
@@ -197,8 +197,6 @@ def build_repair_prompt(row: dict, debug_result: dict) -> str:
     template = load_prompt(REPAIR_PROMPT)
     return render_prompt(
         template,
-        sample_id=str(row["id"]),
-        target_name=primary_function_name(str(row["code"])),
         debug_result_json=compact_json(debug_result),
     )
 
@@ -207,8 +205,6 @@ def build_improve_prompt(row: dict, debug_result: dict) -> str:
     template = load_prompt(IMPROVE_PROMPT)
     return render_prompt(
         template,
-        sample_id=str(row["id"]),
-        target_name=primary_function_name(str(row["code"])),
         debug_result_json=compact_json(debug_result),
     )
 
@@ -303,10 +299,10 @@ def improve_candidate(
 
 
 def build_local_job_dir(*, tmp_dir: Path, sample_id: str, attempt: int) -> Path:
-    return tmp_dir / _remote.safe_name(sample_id) / f"round_{attempt}"
+    return tmp_dir / _local.safe_name(sample_id) / f"round_{attempt}"
 
 
-def write_remote_job_files(
+def write_local_job_files(
     *,
     row: dict,
     job_dir: Path,
@@ -315,7 +311,7 @@ def write_remote_job_files(
     compile_cmd: str,
     compile_timeout: int,
     run_timeout: int,
-    ssh_timeout: int,
+    wall_timeout: int,
 ) -> None:
     job_dir.mkdir(parents=True, exist_ok=True)
     (job_dir / "common.h").write_text(str(row["common"]), encoding="utf-8")
@@ -339,7 +335,7 @@ def write_remote_job_files(
         f"COMPILE_CMD={json.dumps(str(compile_cmd))}",
         f"COMPILE_TIMEOUT={int(compile_timeout)}",
         f"RUN_TIMEOUT={int(run_timeout)}",
-        f"WALL_TIMEOUT={max(1, int(ssh_timeout) - 5)}",
+        f"WALL_TIMEOUT={max(1, int(wall_timeout) - 5)}",
         "FLOAT_TOLERANCE=0.01",
     ]
     (job_dir / "runner_config.sh").write_text("\n".join(config_lines) + "\n", encoding="utf-8")
@@ -350,18 +346,15 @@ def debug_candidate(
     row: dict,
     optimized_code: str,
     attempt: int,
-    host: str,
-    ssh_password: str,
-    remote_root: str,
     tmp_dir: Path,
     compile_cmd: str,
     compile_timeout: int,
     run_timeout: int,
-    ssh_timeout: int,
+    wall_timeout: int,
 ) -> dict:
     baseline_code = kernel_block(row)
     job_dir = build_local_job_dir(tmp_dir=tmp_dir, sample_id=str(row["id"]), attempt=attempt)
-    write_remote_job_files(
+    write_local_job_files(
         row=row,
         job_dir=job_dir,
         baseline_code=baseline_code,
@@ -369,23 +362,15 @@ def debug_candidate(
         compile_cmd=compile_cmd,
         compile_timeout=compile_timeout,
         run_timeout=run_timeout,
-        ssh_timeout=ssh_timeout,
+        wall_timeout=wall_timeout,
     )
     try:
-        remote_result = _remote.run_remote_job(
-            host=host,
-            remote_root=remote_root,
-            local_job_dir=job_dir,
-            pid=str(row["id"]),
-            attempt=attempt,
-            timeout=ssh_timeout,
-            ssh_password=ssh_password,
-        )
+        local_result = _local.run_local_job(job_dir=job_dir, timeout=wall_timeout)
     except Exception as exc:
         return {
             "status": "fail",
-            "stage": "remote",
-            "error_type": "remote_exec",
+            "stage": "run",
+            "error_type": "local_exec",
             "message": str(exc),
             "global_sf_n": 1,
             "baseline_time_ms": 0.0,
@@ -395,7 +380,7 @@ def debug_candidate(
             "optimized_times_ms": [],
             "cases": [],
         }
-    return _bench.summarize_remote_result(remote_result)
+    return _bench.summarize_remote_result(local_result)
 
 
 def is_successful_speedup(debug_result: dict) -> bool:
@@ -522,19 +507,16 @@ def optimize_sample(row: dict, args: argparse.Namespace) -> dict:
         current_code = llm_result["code"]
         messages = llm_result["messages"]
         log_sample(sample_id, f"round {attempt}: LLM returned candidate ({len(current_code)} chars)")
-        log_sample(sample_id, f"round {attempt}: start remote validation")
+        log_sample(sample_id, f"round {attempt}: start local validation")
         last_debug = debug_candidate(
             row=row,
             optimized_code=current_code,
             attempt=attempt,
-            host=args.remote_host,
-            ssh_password=args.ssh_password,
-            remote_root=args.remote_root,
             tmp_dir=Path(args.tmp_dir),
             compile_cmd=args.compile_cmd,
             compile_timeout=args.compile_timeout,
             run_timeout=args.run_timeout,
-            ssh_timeout=args.ssh_timeout,
+            wall_timeout=args.wall_timeout,
         )
         log_sample(
             sample_id,
@@ -616,43 +598,20 @@ def main() -> int:
     Path(args.tmp_dir).mkdir(parents=True, exist_ok=True)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    jobs = max(1, int(args.jobs))
-    if jobs == 1:
-        for index, row in enumerate(pending, start=1):
-            sample_id = str(row["id"])
-            print(f"[{index}/{len(pending)}] optimizing {sample_id}", file=sys.stderr)
-            result = optimize_sample(row, args)
-            replace_result_row(output_path, result)
-        return 0
-
-    print(f"并行任务数: {jobs}", file=sys.stderr)
-    future_to_meta: dict[concurrent.futures.Future, tuple[int, str]] = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as executor:
-        for index, row in enumerate(pending, start=1):
-            sample_id = str(row["id"])
-            print(f"[submit {index}/{len(pending)}] {sample_id}", file=sys.stderr)
-            future = executor.submit(optimize_sample, row, args)
-            future_to_meta[future] = (index, sample_id)
-
-        completed_count = 0
-        for future in concurrent.futures.as_completed(future_to_meta):
-            index, sample_id = future_to_meta[future]
-            completed_count += 1
-            try:
-                result = future.result()
-            except Exception as exc:
-                result = build_failure_row(
-                    sample_id=sample_id,
-                    rounds=0,
-                    stage="runner",
-                    error_type="executor_exception",
-                    message=str(exc),
-                )
-            print(
-                f"[done {completed_count}/{len(pending)} | submit {index}] {sample_id} -> {result.get('status')}",
-                file=sys.stderr,
-            )
-            replace_result_row(output_path, result)
+    _local.run_benchmark_pipeline(
+        pending=pending,
+        args=args,
+        output_path=output_path,
+        replace_result_row=replace_result_row,
+        build_success_row=build_success_row,
+        build_failure_row=build_failure_row,
+        select_best_candidate=select_best_candidate,
+        generate_candidate=generate_candidate,
+        repair_candidate=repair_candidate,
+        improve_candidate=improve_candidate,
+        debug_candidate=debug_candidate,
+        log_sample=log_sample,
+    )
 
     return 0
 

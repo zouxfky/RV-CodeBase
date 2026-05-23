@@ -425,6 +425,7 @@ def build_success_row(
     code: str,
     debug_result: dict,
     message: str,
+    rounds_history: list | None = None,
 ) -> dict:
     return {
         "id": sample_id,
@@ -437,6 +438,7 @@ def build_success_row(
         "code": code,
         "message": message,
         "debug": debug_result,
+        "rounds_history": list(rounds_history or []),
     }
 
 
@@ -449,6 +451,7 @@ def build_failure_row(
     message: str,
     code: str = "",
     debug_result: dict | None = None,
+    rounds_history: list | None = None,
 ) -> dict:
     return {
         "id": sample_id,
@@ -459,6 +462,7 @@ def build_failure_row(
         "message": message,
         "code": code,
         "debug": debug_result or {},
+        "rounds_history": list(rounds_history or []),
     }
 
 

@@ -1,0 +1,17 @@
+{
+  "num_samples": 30,
+  "round1": {
+    "pass_rate": "0.0000",
+    "positive_rate": null,
+    "speedup_over_1_5_rate": null,
+    "geometric_mean_speedup": null,
+    "max_speedup": null
+  },
+  "overall": {
+    "pass_rate": "0.0000",
+    "positive_rate": null,
+    "speedup_over_1_5_rate": null,
+    "geometric_mean_speedup": null,
+    "max_speedup": null
+  }
+}

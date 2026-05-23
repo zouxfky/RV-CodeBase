@@ -103,6 +103,17 @@ def write_state_session(*, state: BenchmarkState, args) -> None:
     )
 
 
+def collect_rounds_history(state: BenchmarkState) -> list[dict]:
+    history: list[dict] = []
+    for candidate in state.previous_candidates:
+        summary = candidate.get("summary")
+        if isinstance(summary, dict):
+            history.append(dict(summary))
+        else:
+            history.append({"round": candidate.get("round")})
+    return history
+
+
 def run_benchmark_pipeline(
     *,
     pending: list[dict],
@@ -152,6 +163,7 @@ def run_benchmark_pipeline(
         )
 
     def build_final_row(state: BenchmarkState) -> dict:
+        history = collect_rounds_history(state)
         if state.best_candidate is not None:
             return build_success_row(
                 sample_id=state.sample_id,
@@ -160,6 +172,7 @@ def run_benchmark_pipeline(
                 code=str(state.best_candidate["code"]),
                 debug_result=state.best_candidate["debug_result"],
                 message="",
+                rounds_history=history,
             )
         if state.last_debug is not None and str(state.last_debug.get("status", "")) == "pass":
             return build_success_row(
@@ -172,6 +185,7 @@ def run_benchmark_pipeline(
                     f"no valid speedup > 1.0 found; latest speedup_ratio="
                     f"{float(state.last_debug.get('speedup_ratio') or 0.0):.6f}"
                 ),
+                rounds_history=history,
             )
         return build_failure_row(
             sample_id=state.sample_id,
@@ -181,6 +195,7 @@ def run_benchmark_pipeline(
             message=str((state.last_debug or {}).get("message", "no valid speedup > 1.0 found")),
             code=state.current_code,
             debug_result=state.last_debug,
+            rounds_history=history,
         )
 
     def enqueue_next_sample() -> bool:
@@ -317,6 +332,7 @@ def run_benchmark_pipeline(
                                 message=str(exc),
                                 code=state.current_code,
                                 debug_result=state.last_debug,
+                                rounds_history=collect_rounds_history(state),
                             ),
                         )
                 else:

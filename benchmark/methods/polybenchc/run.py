@@ -152,7 +152,7 @@ def build_translation_unit(
     if full_block_override is not None:
         block = str(full_block_override)
     elif candidate_block_override is not None:
-        block = str(candidate_block_override) + str(row["suffix_code"])
+        block = str(row["prefix_code"]) + str(candidate_block_override) + str(row["suffix_code"])
     else:
         block = baseline_block(row)
     return normalize_main_source(block).rstrip() + "\n"

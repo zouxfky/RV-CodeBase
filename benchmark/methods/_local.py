@@ -36,15 +36,16 @@ def run_local_job(*, job_dir: Path, timeout: int) -> dict:
         cwd=str(job_dir),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
         timeout=max(1, int(timeout)),
     )
     if completed.returncode != 0 and not result_path.exists():
-        message = completed.stderr.strip() or completed.stdout.strip() or f"local runner failed with {completed.returncode}"
+        stderr_text = completed.stderr.decode("utf-8", errors="replace").strip()
+        stdout_text = completed.stdout.decode("utf-8", errors="replace").strip()
+        message = stderr_text or stdout_text or f"local runner failed with {completed.returncode}"
         raise RuntimeError(message)
     if not result_path.exists():
         raise RuntimeError("local runner exited without result.json")
-    data = json.loads(result_path.read_text(encoding="utf-8"))
+    data = json.loads(result_path.read_text(encoding="utf-8", errors="replace"))
     if not isinstance(data, dict):
         raise ValueError("local result must be a JSON object")
     return data

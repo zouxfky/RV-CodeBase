@@ -19,7 +19,8 @@ DEFAULT_TMP_DIR = REPO_DIR / "tmp/benchmark_tsvc"
 DEFAULT_SESSION_DIR = REPO_DIR / "tmp/benchmark_tsvc_sessions"
 
 COMMON_PROMPT_DIR = BENCHMARK_DIR / "common" / "prompts"
-GENERATE_PROMPT = COMMON_PROMPT_DIR / "generate.md"
+LOCAL_PROMPT_DIR = METHOD_DIR / "prompts"
+GENERATE_PROMPT = LOCAL_PROMPT_DIR / "generate.md"
 REPAIR_PROMPT = COMMON_PROMPT_DIR / "repair.md"
 IMPROVE_PROMPT = COMMON_PROMPT_DIR / "improve.md"
 

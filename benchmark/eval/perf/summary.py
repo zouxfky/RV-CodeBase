@@ -13,20 +13,27 @@ from common.io import read_jsonl, write_json
 
 SPEEDUP_THRESHOLD = 1.5
 
+COMPILE_PASSED_STAGES = {"correctness", "run", "performance"}
+
 
 def is_success(row):
     return str(row.get("status", "")).strip() == "success"
 
 
-def row_speedup(row):
-    value = row.get("best_speedup_ratio")
-    if value is None:
-        debug = row.get("debug") or {}
-        value = debug.get("speedup_ratio")
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return 0.0
+def is_compile_pass(row):
+    history = row.get("rounds_history")
+    if isinstance(history, list) and history:
+        for item in history:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("status", "")).strip() == "pass":
+                return True
+            if str(item.get("stage", "")).strip() in COMPILE_PASSED_STAGES:
+                return True
+        return False
+    if is_success(row):
+        return True
+    return str(row.get("stage", "")).strip() in COMPILE_PASSED_STAGES
 
 
 def round1_entry(row):
@@ -52,6 +59,15 @@ def round1_status(row):
         return False
 
 
+def round1_compile_pass(row):
+    entry = round1_entry(row)
+    if entry is not None:
+        if str(entry.get("status", "")).strip() == "pass":
+            return True
+        return str(entry.get("stage", "")).strip() in COMPILE_PASSED_STAGES
+    return round1_status(row)
+
+
 def round1_speedup(row):
     entry = round1_entry(row)
     if entry is not None:
@@ -64,6 +80,17 @@ def round1_speedup(row):
 
 def round1_is_success(row):
     return round1_status(row) and round1_speedup(row) > 0.0
+
+
+def row_speedup(row):
+    value = row.get("best_speedup_ratio")
+    if value is None:
+        debug = row.get("debug") or {}
+        value = debug.get("speedup_ratio")
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def fmt_ratio(value):
@@ -86,8 +113,9 @@ def geometric_mean(values):
     return math.exp(log_sum / len(positive))
 
 
-def block_metrics(*, total, success_speedups):
-    pass_rate = safe_ratio(len(success_speedups), total)
+def block_metrics(*, total, success_speedups, compile_count, correct_count):
+    compile_rate = safe_ratio(compile_count, total)
+    correct_rate = safe_ratio(correct_count, total)
     positive_count = sum(1 for s in success_speedups if s > 1.0)
     positive_rate = safe_ratio(positive_count, len(success_speedups))
     over_threshold = sum(1 for s in success_speedups if s > SPEEDUP_THRESHOLD)
@@ -95,7 +123,8 @@ def block_metrics(*, total, success_speedups):
     geo_mean = geometric_mean(success_speedups)
     max_speedup = max(success_speedups) if success_speedups else None
     return {
-        "pass_rate": fmt_ratio(pass_rate),
+        "compile_pass_rate": fmt_ratio(compile_rate),
+        "correct_pass_rate": fmt_ratio(correct_rate),
         "positive_rate": fmt_ratio(positive_rate),
         "speedup_over_1_5_rate": fmt_ratio(over_threshold_rate),
         "geometric_mean_speedup": fmt_ratio(geo_mean),
@@ -106,20 +135,26 @@ def block_metrics(*, total, success_speedups):
 def summarize(rows):
     total = len(rows)
 
-    overall_success_speedups = [
-        row_speedup(row) for row in rows if is_success(row)
-    ]
+    overall_success_speedups = [row_speedup(row) for row in rows if is_success(row)]
+    overall_compile_count = sum(1 for row in rows if is_compile_pass(row))
+    overall_correct_count = sum(1 for row in rows if is_success(row))
     overall = block_metrics(
         total=total,
         success_speedups=overall_success_speedups,
+        compile_count=overall_compile_count,
+        correct_count=overall_correct_count,
     )
 
     round1_success_speedups = [
         round1_speedup(row) for row in rows if round1_is_success(row)
     ]
+    round1_compile_count = sum(1 for row in rows if round1_compile_pass(row))
+    round1_correct_count = sum(1 for row in rows if round1_status(row))
     round1 = block_metrics(
         total=total,
         success_speedups=round1_success_speedups,
+        compile_count=round1_compile_count,
+        correct_count=round1_correct_count,
     )
 
     return {

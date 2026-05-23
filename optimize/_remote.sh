@@ -4,6 +4,9 @@ ulimit -c 0 2>/dev/null || true
 
 RESULT_PATH="${1:-result.json}"
 
+: "${FLOAT_TOLERANCE:=0.01}"
+: "${FLOAT_REL_TOLERANCE:=1e-4}"
+
 write_bootstrap_fail_result() {
   message="$1"
   printf '{"pid":"","status":"fail","stage":"exec","error_type":"bootstrap","message":"%s","global_sf_n":null,"baseline_time_ms":0.0,"optimized_time_ms":0.0,"speedup_ratio":0.0,"baseline_times_ms":[],"optimized_times_ms":[],"cases":[]}\n' "$message" > "$RESULT_PATH"
@@ -119,14 +122,21 @@ compare_outputs() {
     expected_value="$(head -n 1 "$expected_norm")"
     actual_value="$(head -n 1 "$actual_norm")"
     if is_float_text "$expected_value" && is_float_text "$actual_value"; then
-      awk -v a="$expected_value" -v b="$actual_value" -v tol="$FLOAT_TOLERANCE" 'BEGIN {
+      awk -v a="$expected_value" -v b="$actual_value" -v tol="$FLOAT_TOLERANCE" -v rtol="$FLOAT_REL_TOLERANCE" 'BEGIN {
         diff = a - b;
         if (diff < 0) diff = -diff;
         if (diff <= tol) {
           print "pass";
           exit 0;
         }
-        printf "float mismatch: abs diff %.12g > %.12g\n", diff, tol;
+        magn = (a < 0 ? -a : a);
+        bm = (b < 0 ? -b : b);
+        if (bm > magn) magn = bm;
+        if (magn > 0 && diff / magn <= rtol) {
+          print "pass";
+          exit 0;
+        }
+        printf "float mismatch: abs diff %.12g > %.12g (rel %.12g > %.12g)\n", diff, tol, (magn > 0 ? diff / magn : 0), rtol;
         exit 1;
       }' > "$message_file"
       rc="$?"

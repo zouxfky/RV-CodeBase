@@ -1,0 +1,61 @@
+{
+  "pid": "basic_muladdsub",
+  "messages": [
+    {
+      "role": "user",
+      "content": "# Role\nYou are a RISC-V code optimization expert. Optimize the target code below for RISC-V performance.\n\n# Target Code\nModify only the following target code.\n\n```c\nreal_t basic_muladdsub(struct args_t * func_args)\n{\n    initialise_arrays(__func__);\n    gettimeofday(&func_args->t1, NULL);\n\n    for (int nl = 0; nl < iterations; nl++) {\n        for (Index_type i = 0; i < LEN_1D; ++i) {\n            out1[i] = in1[i] * in2[i];\n            out2[i] = in1[i] + in2[i];\n            out3[i] = in1[i] - in2[i];\n        }\n        dummy(out1, out2, out3, in1, in2, 0.0);\n    }\n\n    gettimeofday(&func_args->t2, NULL);\n    return calc_checksum(__func__);\n}\n\n```\n\n# Requirements\n* Return a complete replacement for the target code above.\n* Keep all input and output behavior exactly the same, including return values, memory writes, global side effects, and any observable I/O.\n* Keep the same function names, signatures, parameter meanings, return types, and externally visible behavior.\n* Preserve the original computation and dynamic workload. Do not skip work, replace computation with constants, precompute away loops, or otherwise reduce the real work being performed.\n* Optimize mainly with RISC-V Vector techniques. Use RISC-V Vector intrinsics or inline RVV assembly when useful. When using intrinsics, use the official `__riscv_*` names directly.\n* Do not add unrelated scaffolding or extra entry points.\n\n# Output Format\nStrictly return only one code block enclosed by `<code>` and `</code>`. Do not return any other text, explanation, Markdown fence, or extra content.\n\n<code>\n// complete optimized target code\n</code>\n"
+    },
+    {
+      "role": "assistant",
+      "content": "<code>\nreal_t basic_muladdsub(struct args_t * func_args)\n{\n    initialise_arrays(__func__);\n    gettimeofday(&func_args->t1, NULL);\n\n    for (int nl = 0; nl < iterations; nl++) {\n#if defined(__riscv_vector)\n        if (sizeof(real_t) == 8) {\n            const real_t *p_in1 = in1;\n            const real_t *p_in2 = in2;\n            real_t *p_out1 = out1;\n            real_t *p_out2 = out2;\n            real_t *p_out3 = out3;\n            size_t n = (size_t)LEN_1D;\n\n            while (n > 0) {\n                size_t vl;\n                __asm__ volatile (\n                    \"vsetvli %[vl], %[n], e64, m4, ta, ma\\n\\t\"\n                    \"vle64.v v8,  (%[in1])\\n\\t\"\n                    \"vle64.v v12, (%[in2])\\n\\t\"\n                    \"vfmul.vv v16, v8, v12\\n\\t\"\n                    \"vfadd.vv v20, v8, v12\\n\\t\"\n                    \"vfsub.vv v24, v8, v12\\n\\t\"\n                    \"vse64.v v16, (%[out1])\\n\\t\"\n                    \"vse64.v v20, (%[out2])\\n\\t\"\n                    \"vse64.v v24, (%[out3])\\n\\t\"\n                    : [vl] \"=&r\" (vl)\n                    : [n] \"r\" (n),\n                      [in1] \"r\" (p_in1),\n                      [in2] \"r\" (p_in2),\n                      [out1] \"r\" (p_out1),\n                      [out2] \"r\" (p_out2),\n                      [out3] \"r\" (p_out3)\n                    : \"memory\"\n                );\n\n                p_in1  += vl;\n                p_in2  += vl;\n                p_out1 += vl;\n                p_out2 += vl;\n                p_out3 += vl;\n                n      -= vl;\n            }\n        } else if (sizeof(real_t) == 4) {\n            const real_t *p_in1 = in1;\n            const real_t *p_in2 = in2;\n            real_t *p_out1 = out1;\n            real_t *p_out2 = out2;\n            real_t *p_out3 = out3;\n            size_t n = (size_t)LEN_1D;\n\n            while (n > 0) {\n                size_t vl;\n                __asm__ volatile (\n                    \"vsetvli %[vl], %[n], e32, m4, ta, ma\\n\\t\"\n                    \"vle32.v v8,  (%[in1])\\n\\t\"\n                    \"vle32.v v12, (%[in2])\\n\\t\"\n                    \"vfmul.vv v16, v8, v12\\n\\t\"\n                    \"vfadd.vv v20, v8, v12\\n\\t\"\n                    \"vfsub.vv v24, v8, v12\\n\\t\"\n                    \"vse32.v v16, (%[out1])\\n\\t\"\n                    \"vse32.v v20, (%[out2])\\n\\t\"\n                    \"vse32.v v24, (%[out3])\\n\\t\"\n                    : [vl] \"=&r\" (vl)\n                    : [n] \"r\" (n),\n                      [in1] \"r\" (p_in1),\n                      [in2] \"r\" (p_in2),\n                      [out1] \"r\" (p_out1),\n                      [out2] \"r\" (p_out2),\n                      [out3] \"r\" (p_out3)\n                    : \"memory\"\n                );\n\n                p_in1  += vl;\n                p_in2  += vl;\n                p_out1 += vl;\n                p_out2 += vl;\n                p_out3 += vl;\n                n      -= vl;\n            }\n        } else\n#endif\n        {\n            for (Index_type i = 0; i < LEN_1D; ++i) {\n                out1[i] = in1[i] * in2[i];\n                out2[i] = in1[i] + in2[i];\n                out3[i] = in1[i] - in2[i];\n            }\n        }\n\n        dummy(out1, out2, out3, in1, in2, 0.0);\n    }\n\n    gettimeofday(&func_args->t2, NULL);\n    return calc_checksum(__func__);\n}\n</code>"
+    },
+    {
+      "role": "user",
+      "content": "# Role\nYou are a RISC-V code optimization expert. Use the existing session context to repair the current target code.\n\n# Latest Debug Result\n```json\n{\n  \"status\": \"fail\",\n  \"stage\": \"correctness\",\n  \"error_type\": \"wrong_answer\",\n  \"message\": \"output mismatch\",\n  \"global_sf_n\": 1,\n  \"baseline_time_ms\": 0.0,\n  \"optimized_time_ms\": 0.0,\n  \"speedup_ratio\": 0.0,\n  \"baseline_times_ms\": [],\n  \"optimized_times_ms\": [],\n  \"cases\": [\n    {\n      \"testcase_index\": 0,\n      \"baseline_returncode\": 0,\n      \"optimized_returncode\": 0,\n      \"baseline_time_ms\": 161.540039,\n      \"optimized_time_ms\": 7350.073975,\n      \"output_match\": false,\n      \"message\": \"output mismatch\"\n    }\n  ]\n}\n```\n\n# Requirements\n* Use the complete code from your previous assistant reply in this same session as the current target code.\n* Fix compile, runtime, or correctness failures first.\n* Keep all input and output behavior exactly the same, including return values, memory writes, global side effects, and any observable I/O.\n* Keep the same function names, signatures, parameter meanings, return types, and externally visible behavior.\n* Preserve the original computation and dynamic workload. Do not skip work, replace computation with constants, precompute away loops, or otherwise reduce the real work being performed.\n* Keep useful RISC-V Vector optimization work when possible.\n* Do not add unrelated scaffolding or extra entry points.\n\n# Output Format\nStrictly return only one code block enclosed by `<code>` and `</code>`. Do not return any other text, explanation, Markdown fence, or extra content.\n\n<code>\n// complete repaired target code\n</code>\n"
+    },
+    {
+      "role": "assistant",
+      "content": "<code>\nreal_t basic_muladdsub(struct args_t * func_args)\n{\n    initialise_arrays(__func__);\n    gettimeofday(&func_args->t1, NULL);\n\n    for (int nl = 0; nl < iterations; nl++) {\n        for (Index_type i = 0; i < LEN_1D; ++i) {\n            const real_t a = in1[i];\n            const real_t b = in2[i];\n            out1[i] = a * b;\n            out2[i] = a + b;\n            out3[i] = a - b;\n        }\n        dummy(out1, out2, out3, in1, in2, 0.0);\n    }\n\n    gettimeofday(&func_args->t2, NULL);\n    return calc_checksum(__func__);\n}\n</code>"
+    },
+    {
+      "role": "user",
+      "content": "# Role\nYou are a RISC-V code optimization expert. Use the existing session context to repair the current target code.\n\n# Latest Debug Result\n```json\n{\n  \"status\": \"fail\",\n  \"stage\": \"correctness\",\n  \"error_type\": \"wrong_answer\",\n  \"message\": \"output mismatch\",\n  \"global_sf_n\": 1,\n  \"baseline_time_ms\": 0.0,\n  \"optimized_time_ms\": 0.0,\n  \"speedup_ratio\": 0.0,\n  \"baseline_times_ms\": [],\n  \"optimized_times_ms\": [],\n  \"cases\": [\n    {\n      \"testcase_index\": 0,\n      \"baseline_returncode\": 0,\n      \"optimized_returncode\": 0,\n      \"baseline_time_ms\": 171.85083,\n      \"optimized_time_ms\": 6168.333008,\n      \"output_match\": false,\n      \"message\": \"output mismatch\"\n    }\n  ]\n}\n```\n\n# Requirements\n* Use the complete code from your previous assistant reply in this same session as the current target code.\n* Fix compile, runtime, or correctness failures first.\n* Keep all input and output behavior exactly the same, including return values, memory writes, global side effects, and any observable I/O.\n* Keep the same function names, signatures, parameter meanings, return types, and externally visible behavior.\n* Preserve the original computation and dynamic workload. Do not skip work, replace computation with constants, precompute away loops, or otherwise reduce the real work being performed.\n* Keep useful RISC-V Vector optimization work when possible.\n* Do not add unrelated scaffolding or extra entry points.\n\n# Output Format\nStrictly return only one code block enclosed by `<code>` and `</code>`. Do not return any other text, explanation, Markdown fence, or extra content.\n\n<code>\n// complete repaired target code\n</code>\n"
+    },
+    {
+      "role": "assistant",
+      "content": "<code>\nreal_t basic_muladdsub(struct args_t * func_args)\n{\n    initialise_arrays(__func__);\n    gettimeofday(&func_args->t1, NULL);\n\n    for (int nl = 0; nl < iterations; nl++) {\n        for (Index_type i = 0; i < LEN_1D; ++i) {\n            out1[i] = in1[i] * in2[i];\n            out2[i] = in1[i] + in2[i];\n            out3[i] = in1[i] - in2[i];\n        }\n        dummy(out1, out2, out3, in1, in2, 0.0);\n    }\n\n    gettimeofday(&func_args->t2, NULL);\n    return calc_checksum(__func__);\n}\n</code>"
+    }
+  ],
+  "previous_candidates": [
+    {
+      "round": 1,
+      "status": "fail",
+      "stage": "correctness",
+      "error_type": "wrong_answer",
+      "speedup": 0.0,
+      "baseline": 0.0,
+      "optimized": 0.0,
+      "message": "output mismatch"
+    },
+    {
+      "round": 2,
+      "status": "fail",
+      "stage": "correctness",
+      "error_type": "wrong_answer",
+      "speedup": 0.0,
+      "baseline": 0.0,
+      "optimized": 0.0,
+      "message": "output mismatch"
+    },
+    {
+      "round": 3,
+      "status": "fail",
+      "stage": "correctness",
+      "error_type": "wrong_answer",
+      "speedup": 0.0,
+      "baseline": 0.0,
+      "optimized": 0.0,
+      "message": "output mismatch"
+    }
+  ]
+}

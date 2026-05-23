@@ -14,6 +14,12 @@ Modify only the following target code.
 * Keep the same function names, signatures, parameter meanings, return types, and externally visible behavior.
 * Preserve the original computation and dynamic workload. Do not skip work, replace computation with constants, precompute away loops, or otherwise reduce the real work being performed.
 * Optimize mainly with RISC-V Vector techniques. Use RISC-V Vector intrinsics or inline RVV assembly when useful. When using intrinsics, use the official `__riscv_*` names directly.
+* If you use any `__riscv_*` intrinsic, you MUST include the header. Do not assume it is already included. Use the following guarded include exactly:
+  ```c
+  #if defined(__riscv_vector)
+  #include <riscv_vector.h>
+  #endif
+  ```
 * Do not add unrelated scaffolding or extra entry points.
 
 # Output Format

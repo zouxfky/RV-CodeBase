@@ -206,10 +206,19 @@ compile_baseline_one() {
   bin="$2"
   err="$3"
   cache_root="${BASELINE_CACHE_ROOT:-/tmp/rv_opt_baseline_cache}"
+
+  # Cache key must hash every input that affects baseline.bin: the source itself,
+  # the compile command, AND every shared support file pulled in by COMPILE_CMD
+  # (common.c, common.h, array_defs.h, dummy.c, globals.c). Hashing only "$src"
+  # makes the cache reuse a stale binary whenever harness files change.
+  cache_inputs="$src"
+  for f in common.c common.h array_defs.h dummy.c globals.c; do
+    [ -f "$f" ] && cache_inputs="$cache_inputs $f"
+  done
   if command -v sha256sum >/dev/null 2>&1; then
-    cache_key="$( (printf '%s\n' "$COMPILE_CMD ${COMPILE_TAIL:-}"; cat "$src") | sha256sum | awk '{print $1}' )"
+    cache_key="$( (printf '%s\n' "$COMPILE_CMD ${COMPILE_TAIL:-}"; for f in $cache_inputs; do cat "$f"; done) | sha256sum | awk '{print $1}' )"
   else
-    cache_key="$( (printf '%s\n' "$COMPILE_CMD ${COMPILE_TAIL:-}"; cat "$src") | cksum | awk '{print $1 "_" $2}' )"
+    cache_key="$( (printf '%s\n' "$COMPILE_CMD ${COMPILE_TAIL:-}"; for f in $cache_inputs; do cat "$f"; done) | cksum | awk '{print $1 "_" $2}' )"
   fi
   cache_bin="$cache_root/$cache_key.bin"
 

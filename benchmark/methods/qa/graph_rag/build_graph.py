@@ -10,7 +10,7 @@ from pathlib import Path
 BENCHMARK_DIR = Path(__file__).resolve().parents[3]
 REPO_DIR = BENCHMARK_DIR.parent
 METHOD_DIR = Path(__file__).resolve().parent
-DEFAULT_MATERIALS = REPO_DIR / "materials/RVV.json"
+DEFAULT_MATERIALS = BENCHMARK_DIR / "datasets/rvv.json"
 DEFAULT_QUESTIONS = BENCHMARK_DIR / "datasets/questions.jsonl"
 DEFAULT_ARTIFACTS_DIR = METHOD_DIR / "artifacts"
 DEFAULT_NODES = DEFAULT_ARTIFACTS_DIR / "graph_nodes.jsonl"

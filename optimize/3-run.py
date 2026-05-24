@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 CURRENT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = CURRENT_DIR.parent
-OUT_DIR = ROOT_DIR / "out"
+DATA_DIR = ROOT_DIR / "data"
 TMP_DIR = ROOT_DIR / "tmp"
 
 if str(CURRENT_DIR) not in sys.path:
@@ -24,10 +24,10 @@ import _records
 import _session
 
 
-DEFAULT_SEED_PATH = OUT_DIR / "seed.jsonl"
-DEFAULT_VERIFY_PATH = OUT_DIR / "output.jsonl"
-DEFAULT_TESTCASE_PATH = OUT_DIR / "testcase.jsonl"
-DEFAULT_RESULT_PATH = OUT_DIR / "rv2.jsonl"
+DEFAULT_SEED_PATH = DATA_DIR / "seed.jsonl"
+DEFAULT_VERIFY_PATH = DATA_DIR / "output.jsonl"
+DEFAULT_TESTCASE_PATH = DATA_DIR / "testcase.jsonl"
+DEFAULT_RESULT_PATH = DATA_DIR / "optimized.jsonl"
 DEFAULT_CONFIG_PATH = ROOT_DIR / "llm_config.env"
 DEFAULT_TMP_DIR = TMP_DIR / "rv_opt"
 DEFAULT_SESSION_DIR = TMP_DIR / "rv_opt_sessions"

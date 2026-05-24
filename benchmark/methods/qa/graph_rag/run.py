@@ -866,7 +866,7 @@ def main():
     parser.add_argument("--embedding-top-k", type=int, default=8)
     parser.add_argument("--graph-depth", type=int, default=1)
     parser.add_argument("--debug-retrieval", action="store_true")
-    parser.add_argument("--materials", default=str(REPO_DIR / "materials/RVV.json"))
+    parser.add_argument("--materials", default=str(REPO_DIR / "benchmark/datasets/rvv.json"))
     parser.add_argument("--chunks", default=str(DEFAULT_CHUNKS))
     parser.add_argument("--chunk-embeddings", default=str(DEFAULT_CHUNK_EMBEDDINGS))
     parser.add_argument("--question-embeddings", default=str(DEFAULT_QUESTION_EMBEDDINGS))

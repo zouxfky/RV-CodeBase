@@ -210,7 +210,7 @@ def main():
     parser = argparse.ArgumentParser(description="Build TextRAG chunks and embeddings.")
     parser.add_argument(
         "--materials",
-        default=str(REPO_DIR / "materials/RVV.json"),
+        default=str(REPO_DIR / "benchmark/datasets/rvv.json"),
     )
     parser.add_argument(
         "--questions",

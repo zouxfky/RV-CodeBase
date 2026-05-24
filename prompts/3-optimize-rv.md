@@ -24,7 +24,7 @@ The dataset is massive; **DO NOT load whole files**. You must strictly perform t
     * `data/seed.jsonl`: Contains the target `solve(...)` source code.
     * `data/output.jsonl`: Provides the execution context (scale, baseline timing, and run environment).
     * `data/testcase.jsonl`: Provides the verified `main` harness and test vectors.
-* **Technical Standard:** Ground all vectorization decisions in `materials/RVV1.0指令集.md`.
+* **Technical Standard:** Ground all vectorization decisions in `benchmark/datasets/rvv.md`.
 
 ---
 

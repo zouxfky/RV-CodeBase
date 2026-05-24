@@ -332,7 +332,7 @@ def main():
     parser.add_argument("--top-k", type=int, default=3)
     parser.add_argument(
         "--materials",
-        default=str(REPO_DIR / "materials/RVV.json"),
+        default=str(REPO_DIR / "benchmark/datasets/rvv.json"),
     )
     parser.add_argument(
         "--chunks",

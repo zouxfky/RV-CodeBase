@@ -1,0 +1,18 @@
+{
+  "rvcodebase_train": {
+    "file_name": "../../datasets/sft/train.jsonl",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  },
+  "rvcodebase_eval": {
+    "file_name": "../../datasets/sft/eval.jsonl",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  }
+}

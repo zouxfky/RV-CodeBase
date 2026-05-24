@@ -16,3 +16,7 @@ source/
 # Data
 data/
 out/
+
+# SFT artifacts
+benchmark/datasets/sft/
+benchmark/sft/results/

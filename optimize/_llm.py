@@ -76,6 +76,9 @@ def build_request_options(config: dict[str, str]) -> dict[str, Any]:
     temperature_raw = get_config_value(config, "temperature")
     if temperature_raw:
         request_options["temperature"] = float(temperature_raw)
+    thinking = thinking_field(config)
+    if thinking is not None:
+        request_options["thinking"] = thinking
     return request_options
 
 
@@ -87,7 +90,28 @@ def build_responses_options(config: dict[str, str]) -> dict[str, Any]:
     temperature_raw = get_config_value(config, "temperature")
     if temperature_raw:
         request_options["temperature"] = float(temperature_raw)
+    thinking = thinking_field(config)
+    if thinking is not None:
+        request_options["thinking"] = thinking
     return request_options
+
+
+def thinking_field(config: dict[str, str]):
+    """Build the `thinking` payload field, or None if it should be omitted.
+
+    Behavior:
+      thinking unset           -> None (do not include the field; many gateways
+                                  reject unknown fields with 400/timeout)
+      thinking = enabled       -> {"type": "enabled"}
+      thinking = disabled      -> {"type": "disabled"}
+      anything else            -> None
+    """
+    raw = get_config_value(config, "thinking").lower()
+    if raw == "enabled":
+        return {"type": "enabled"}
+    if raw == "disabled":
+        return {"type": "disabled"}
+    return None
 
 
 def extract_response_text(response: Any) -> str:

@@ -11,7 +11,7 @@ Built on top of these, RV-CodeBase also defines two downstream benchmark tasks: 
 
 ## Overview
 
-![RV-CodeBase]( )
+![RV-CodeBase](fig/overview.png)
 
 ## Features
 
@@ -49,33 +49,55 @@ After the host machine produces the dataset artifacts, sync them to the RISC-V m
 
 ## Generate RV-CodeBase
 
-The dataset construction pipeline is organized stage by stage, with each stage producing JSONL artifacts under `data/` for inspection and reuse:
+The dataset construction pipeline runs stage by stage, with each stage producing JSONL artifacts under `data/` for inspection and reuse. Each stage script is runnable on its own, so the pipeline can be executed end to end or replayed from any intermediate JSONL.
+
+## Benchmark Tasks
+
+Both tasks call an OpenAI-compatible chat endpoint configured in the repo-level `llm_config.env`:
 
 ```text
-materials/   # RVV knowledge base sources and reference materials
-seed/        # 1.x  embedding / matching / dedup / classification / transform / verify / repair
-test/        # 2.x  test case generation and debugging
-optimize/    # 3.x  RVV-oriented optimization: generation / improvement / repair / review
-prompts/     # LLM prompts used at each stage
-source/      # Raw code sources (PolyBenchC / RAJAPerf / TSVC / NPB / HeCBench / GitHub / OJ ...)
-data/        # Intermediate and final artifacts (jsonl)
-benchmark/   # Downstream benchmarks: RVV QA (RAG) and code optimization
+api_base_url = http://<host>:<port>/v1
+api_key      = <key or EMPTY>
+model        = <model name>
+temperature  = 0
 ```
 
-Each stage script is runnable on its own, so the pipeline can be executed end to end or replayed from any intermediate JSONL.
+### RAG-based RVV Instruction QA
 
-## Downstream Tasks
+Run any of the three QA settings against `benchmark/datasets/questions.jsonl`. Each runner writes `predictions.jsonl` under `benchmark/results/qa/<method>/`:
 
-**RAG-based RVV Instruction QA.** Use the RVV knowledge base as a retrieval source over multiple RAG configurations (No-RAG / TextRAG / GraphRAG) and evaluate answer quality on RVV instruction questions. Scaffolding lives under `benchmark/methods/qa/` and `benchmark/eval/qa/`.
+```bash
+# No-RAG: model-only baseline
+python3 benchmark/methods/qa/no_rag/run.py     --method <method> --jobs 8
 
-**Instruction SFT for Code Optimization.** Convert the verified code optimization pairs into instruction-based SFT data, fine-tune LLMs with LoRA, and evaluate the resulting model on TSVC, PolyBench/C, and RAJAPerf. The SFT pipeline lives under `benchmark/sft/`; see `benchmark/sft/README.md` for the full flow.
+# TextRAG: embedding retrieval over the RVV knowledge base
+python3 benchmark/methods/qa/text_rag/run.py   --method <method> --jobs 8 --top-k 3
 
-## TODO
+# GraphRAG: knowledge graph retrieval over the RVV knowledge base
+python3 benchmark/methods/qa/graph_rag/run.py  --method <method> --jobs 8 --top-k 5
+```
 
-- [ ] One-line command to generate RV-CodeBase end to end
-- [ ] Dockerized build and verification environment
-- [ ] Expanded benchmark reports and leaderboard
+Score predictions and aggregate:
 
-## License
+```bash
+python3 benchmark/eval/qa/eval_qa.py       --method <method>   # writes metrics.jsonl
+python3 benchmark/eval/qa/aggregate_qa.py  --method <method>   # writes summary.json
+```
 
-Please follow the original licenses of the upstream data sources. Code in this repository is released under the LICENSE file shipped with the repo.
+### Code Optimization on TSVC, PolyBench/C, RAJAPerf
+
+Run a model on each benchmark; results land at `benchmark/results/<bench>/<model>/results.jsonl`:
+
+```bash
+python3 benchmark/methods/tsvc/run.py        --output benchmark/results/tsvc/<model>/results.jsonl
+python3 benchmark/methods/polybenchc/run.py  --output benchmark/results/polybenchc/<model>/results.jsonl
+python3 benchmark/methods/rajaperf/run.py    --output benchmark/results/rajaperf/<model>/results.jsonl
+```
+
+Score per-run and build the cross-model summary table:
+
+```bash
+python3 benchmark/eval/perf/summary.py             --input benchmark/results/<bench>/<model>/results.jsonl
+python3 benchmark/eval/perf/build_summary_table.py     # writes benchmark/results/summary_table.xlsx
+```
+

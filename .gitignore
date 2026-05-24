@@ -20,3 +20,22 @@ out/
 # SFT artifacts
 benchmark/datasets/sft/
 benchmark/sft/results/
+
+# Local config (use llm_config.example.env as the template)
+llm_config.env
+*.local.env
+.env
+.env.*
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log

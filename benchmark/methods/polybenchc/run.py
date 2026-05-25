@@ -318,11 +318,12 @@ def write_local_job_files(
         f"PID={json.dumps(str(row['id']))}",
         "GLOBAL_SF_N=1",
         f"COMPILE_CMD={json.dumps(str(compile_cmd))}",
-        'COMPILE_TAIL="-lm"',
+        'COMPILE_TAIL="-DPOLYBENCH_DUMP_ARRAYS -lm"',
         f"COMPILE_TIMEOUT={int(compile_timeout)}",
         f"RUN_TIMEOUT={int(run_timeout)}",
         f"WALL_TIMEOUT={max(1, int(wall_timeout) - 5)}",
         "FLOAT_TOLERANCE=0.01",
+        "MERGE_STDERR=1",
     ]
     (job_dir / "runner_config.sh").write_text("\n".join(config_lines) + "\n", encoding="utf-8")
 

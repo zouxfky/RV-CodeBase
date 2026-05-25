@@ -110,44 +110,67 @@ compare_outputs() {
   normalize_to_file "$expected_file" "$expected_norm"
   normalize_to_file "$actual_file" "$actual_norm"
 
-  if cmp -s "$expected_norm" "$actual_norm"; then
-    printf 'pass\n' > "$message_file"
+  # Reject saturated floats. inf/nan in either side means the kernel went numerically
+  # unstable; identical "inf" strings on both sides is not a real correctness signal
+  # because any optimization that touches even one element will also produce inf and
+  # match by string. Force a fail so such samples are excluded from speedup ratios.
+  if LC_ALL=C grep -Eq -i '(^|[^a-z0-9_])(inf|infinity|nan)([^a-z0-9_]|$)' "$expected_norm" "$actual_norm"; then
+    printf 'baseline or optimized output contains inf/nan; treated as numerically unstable\n' > "$message_file"
     rm -f "$expected_norm" "$actual_norm"
-    return 0
+    return 1
   fi
 
-  expected_lines="$(awk 'END { print NR + 0 }' "$expected_norm")"
-  actual_lines="$(awk 'END { print NR + 0 }' "$actual_norm")"
-  if [ "$expected_lines" -eq 1 ] && [ "$actual_lines" -eq 1 ]; then
-    expected_value="$(head -n 1 "$expected_norm")"
-    actual_value="$(head -n 1 "$actual_norm")"
-    if is_float_text "$expected_value" && is_float_text "$actual_value"; then
-      awk -v a="$expected_value" -v b="$actual_value" -v tol="$FLOAT_TOLERANCE" -v rtol="$FLOAT_REL_TOLERANCE" 'BEGIN {
-        diff = a - b;
-        if (diff < 0) diff = -diff;
-        if (diff <= tol) {
-          print "pass";
-          exit 0;
-        }
-        magn = (a < 0 ? -a : a);
-        bm = (b < 0 ? -b : b);
-        if (bm > magn) magn = bm;
-        if (magn > 0 && diff / magn <= rtol) {
-          print "pass";
-          exit 0;
-        }
-        printf "float mismatch: abs diff %.12g > %.12g (rel %.12g > %.12g)\n", diff, tol, (magn > 0 ? diff / magn : 0), rtol;
+  awk -v tol="$FLOAT_TOLERANCE" -v rtol="$FLOAT_REL_TOLERANCE" -v msg_file="$message_file" '
+    function is_num(s) {
+      return (s ~ /^[+-]?([0-9]+|[0-9]*\.[0-9]+|[0-9]+\.)([eE][-+]?[0-9]+)?$/);
+    }
+    function abs(x) { return x < 0 ? -x : x; }
+    NR == FNR {
+      for (i = 1; i <= NF; i++) { exp_tok[++ne] = $i }
+      next
+    }
+    {
+      for (i = 1; i <= NF; i++) { act_tok[++na] = $i }
+    }
+    END {
+      if (ne != na) {
+        printf "token count mismatch: expected %d tokens, got %d\n", ne, na > msg_file;
         exit 1;
-      }' > "$message_file"
-      rc="$?"
-      rm -f "$expected_norm" "$actual_norm"
-      return "$rc"
-    fi
-  fi
-
-  printf 'output mismatch\n' > "$message_file"
+      }
+      mismatches = 0;
+      for (i = 1; i <= ne; i++) {
+        e = exp_tok[i]; a = act_tok[i];
+        if (is_num(e) && is_num(a)) {
+          ev = e + 0; av = a + 0;
+          diff = abs(ev - av);
+          magn = abs(ev); am = abs(av);
+          if (am > magn) magn = am;
+          if (diff <= tol) continue;
+          if (magn > 0 && diff / magn <= rtol) continue;
+          mismatches++;
+          if (mismatches <= 3) {
+            printf "float mismatch at token %d: expected %s, got %s (abs %.6g, rel %.6g)\n", i, e, a, diff, (magn > 0 ? diff/magn : 0) > msg_file;
+          }
+        } else {
+          if (e != a) {
+            mismatches++;
+            if (mismatches <= 3) {
+              printf "token mismatch at position %d: expected \"%s\", got \"%s\"\n", i, e, a > msg_file;
+            }
+          }
+        }
+      }
+      if (mismatches > 0) {
+        printf "total mismatches: %d / %d tokens\n", mismatches, ne > msg_file;
+        exit 1;
+      }
+      print "pass" > msg_file;
+      exit 0;
+    }
+  ' "$expected_norm" "$actual_norm"
+  rc="$?"
   rm -f "$expected_norm" "$actual_norm"
-  return 1
+  return "$rc"
 }
 
 build_runtime_message() {
@@ -324,9 +347,17 @@ while IFS="$(printf '\t')" read -r testcase_index input_file; do
       "$case_message_file"
     error_type="optimized_runtime"
   else
+    baseline_compare_input="correct.baseline.$testcase_index.out"
+    optimized_compare_input="correct.optimized.$testcase_index.out"
+    if [ "${MERGE_STDERR:-0}" = "1" ]; then
+      baseline_compare_input="correct.baseline.$testcase_index.merged"
+      optimized_compare_input="correct.optimized.$testcase_index.merged"
+      cat "correct.baseline.$testcase_index.out" "correct.baseline.$testcase_index.err" > "$baseline_compare_input"
+      cat "correct.optimized.$testcase_index.out" "correct.optimized.$testcase_index.err" > "$optimized_compare_input"
+    fi
     if compare_outputs \
-      "correct.baseline.$testcase_index.out" \
-      "correct.optimized.$testcase_index.out" \
+      "$baseline_compare_input" \
+      "$optimized_compare_input" \
       "$compare_message_file"
     then
       output_match=true
@@ -334,8 +365,8 @@ while IFS="$(printf '\t')" read -r testcase_index input_file; do
     else
       build_wrong_answer_message \
         "$compare_message_file" \
-        "correct.baseline.$testcase_index.out" \
-        "correct.optimized.$testcase_index.out" \
+        "$baseline_compare_input" \
+        "$optimized_compare_input" \
         "$case_message_file"
       error_type="wrong_answer"
     fi

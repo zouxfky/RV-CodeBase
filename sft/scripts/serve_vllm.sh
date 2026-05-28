@@ -29,4 +29,5 @@ exec vllm serve "${MODEL}" \
     --port "${PORT}" \
     --tensor-parallel-size "${TP}" \
     --dtype bfloat16 \
-    --max-model-len 8192
+    --gpu-memory-utilization 0.85 \
+    --max-model-len 16384

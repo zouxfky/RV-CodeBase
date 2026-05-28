@@ -1,1 +1,7 @@
 tqdm
+openai
+huggingface_hub
+
+# SFT (training + serving). Optional — install only when fine-tuning.
+llamafactory
+vllm

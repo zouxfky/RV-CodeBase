@@ -5,16 +5,16 @@
 #   sft/scripts/merge_lora.sh <base_model> <adapter_dir> <export_dir> [template]
 # Example:
 #   sft/scripts/merge_lora.sh \
-#       Qwen/Qwen2.5-Coder-7B-Instruct \
+#       Qwen/Qwen3.5-9B \
 #       sft/results/qwen3.5-9b-lora \
 #       sft/results/qwen3.5-9b-merged \
-#       qwen
+#       qwen3_5
 set -euo pipefail
 
 BASE="${1:?base model path or HF id required}"
 ADAPTER="${2:?adapter dir required}"
 EXPORT_DIR="${3:?export dir required}"
-TEMPLATE="${4:-qwen}"
+TEMPLATE="${4:-qwen3_5}"
 
 if ! command -v llamafactory-cli >/dev/null 2>&1; then
     echo "llamafactory-cli not found. Install with: pip install llamafactory" >&2

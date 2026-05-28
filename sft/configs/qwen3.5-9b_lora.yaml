@@ -1,5 +1,5 @@
 ### model
-model_name_or_path: Qwen/Qwen2.5-Coder-7B-Instruct
+model_name_or_path: Qwen/Qwen3.5-9B
 trust_remote_code: true
 
 ### method
@@ -15,7 +15,7 @@ lora_dropout: 0.05
 dataset_dir: sft/configs
 dataset: rvcodebase_train
 eval_dataset: rvcodebase_eval
-template: qwen
+template: qwen3_5
 cutoff_len: 8192
 max_samples: 100000
 overwrite_cache: true
@@ -28,9 +28,11 @@ save_steps: 500
 save_total_limit: 3
 plot_loss: true
 overwrite_output_dir: true
-report_to: none
+report_to: tensorboard
 
 ### train
+# effective batch = per_device * grad_accum * num_gpus
+# single-GPU default = 16; for multi-GPU, lower grad_accum to keep it ~16
 per_device_train_batch_size: 1
 gradient_accumulation_steps: 16
 learning_rate: 1.0e-4
@@ -44,4 +46,4 @@ ddp_timeout: 180000000
 ### eval
 per_device_eval_batch_size: 1
 eval_strategy: steps
-eval_steps: 500
+eval_steps: 200

@@ -3,21 +3,24 @@ import hashlib
 import json
 import math
 import re
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from openai import OpenAI
 from tqdm import tqdm
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _jsonl_store import JsonlStore, file_lock
+
 
 SRC_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = SRC_DIR / "data"
 PROMPTS_DIR = SRC_DIR / "prompts"
 CONFIG_PATH = SRC_DIR / "llm_config.env"
-MERGE_PATH = DATA_DIR / "merge.jsonl"
+COLLECTED_PATH = DATA_DIR / "collected_seeds.jsonl"
 EMBEDDINGS_PATH = DATA_DIR / "embeddings.jsonl"
 PROMPT_PATH = PROMPTS_DIR / "1-match.md"
-COMPLETED_PATH = DATA_DIR / "match.jsonl"
 
 TOP_K = 10
 DEFAULT_SYSTEM_PROMPT = (
@@ -43,17 +46,6 @@ def load_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def read_jsonl(path: Path) -> list[dict]:
-    rows: list[dict] = []
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            rows.append(json.loads(line))
-    return rows
-
-
 def load_embeddings(path: Path) -> dict[str, dict]:
     embeddings: dict[str, dict] = {}
     with path.open("r", encoding="utf-8") as fh:
@@ -66,22 +58,6 @@ def load_embeddings(path: Path) -> dict[str, dict]:
             if pid:
                 embeddings[pid] = item
     return embeddings
-
-
-def load_completed_source_pids(path: Path) -> set[str]:
-    completed: set[str] = set()
-    if not path.exists():
-        return completed
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            item = json.loads(line)
-            source_pid = str(item.get("source_pid", "")).strip()
-            if source_pid:
-                completed.add(source_pid)
-    return completed
 
 
 def text_hash(text: str) -> str:
@@ -231,39 +207,43 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     config = parse_env_file(Path(args.config_path))
-    rows = read_jsonl(MERGE_PATH)
 
     if not EMBEDDINGS_PATH.exists():
         print("[Exit] embeddings.jsonl not found. please build embeddings first.")
         return 1
 
-    embeddings = load_embeddings(EMBEDDINGS_PATH)
-    ok, reason = verify_embeddings(rows, embeddings)
-    if not ok:
-        print(f"[Exit] embeddings.jsonl is incomplete or stale: {reason}")
-        return 1
+    with file_lock(COLLECTED_PATH):
+        store = JsonlStore(COLLECTED_PATH, flush_every=50)
+        rows = store.rows()
 
-    user_template = load_text(PROMPT_PATH)
-    system_prompt = config.get("dedupe_system_prompt", DEFAULT_SYSTEM_PROMPT)
-    model = config.get("model", "").strip()
-    if not model:
-        raise ValueError("missing model in llm_config.env")
-    temperature = float(config.get("temperature", "0").strip() or "0")
-    max_completion_tokens = int(config.get("max_completion_tokens", "1024").strip() or "1024")
+        embeddings = load_embeddings(EMBEDDINGS_PATH)
+        ok, reason = verify_embeddings(rows, embeddings)
+        if not ok:
+            print(f"[Exit] embeddings.jsonl is incomplete or stale: {reason}")
+            return 1
 
-    client = get_client(config)
-    completed_source_pids = load_completed_source_pids(COMPLETED_PATH)
+        user_template = load_text(PROMPT_PATH)
+        system_prompt = config.get("dedupe_system_prompt", DEFAULT_SYSTEM_PROMPT)
+        model = config.get("model", "").strip()
+        if not model:
+            raise ValueError("missing model in llm_config.env")
+        temperature = float(config.get("temperature", "0").strip() or "0")
+        max_completion_tokens = int(config.get("max_completion_tokens", "1024").strip() or "1024")
 
-    rows_by_pid = {
-        str(row.get("pid", "")).strip(): row
-        for row in rows
-        if str(row.get("pid", "")).strip()
-    }
-    alive_pids = alive_query_pids(rows)
-    pending_query_pids = [pid for pid in alive_pids if pid not in completed_source_pids]
+        client = get_client(config)
 
-    batch_size = max(1, args.j)
-    with COMPLETED_PATH.open("a", encoding="utf-8") as fh:
+        rows_by_pid = {
+            str(row.get("pid", "")).strip(): row
+            for row in rows
+            if str(row.get("pid", "")).strip()
+        }
+        alive_pids = alive_query_pids(rows)
+        pending_query_pids = [
+            pid for pid in alive_pids
+            if str(rows_by_pid[pid].get("stage", "")).strip() != "matched"
+        ]
+
+        batch_size = max(1, args.j)
         with tqdm(total=len(pending_query_pids), unit="query") as progress:
             for batch_start in range(0, len(pending_query_pids), batch_size):
                 batch = pending_query_pids[batch_start: batch_start + batch_size]
@@ -309,13 +289,17 @@ def main() -> int:
                         key=lambda item: item["score"],
                         reverse=True,
                     )
-                    record = {
-                        "source_pid": query_pid,
-                        "target": results_by_query[query_pid],
-                    }
-                    fh.write(json.dumps(record, ensure_ascii=False) + "\n")
-                    fh.flush()
+                    store.update_row(
+                        query_pid,
+                        {
+                            "match": {"target": results_by_query[query_pid]},
+                            "stage": "matched",
+                        },
+                    )
                     progress.update(1)
+                store.flush_if_due()
+
+        store.flush()
     return 0
 
 

@@ -5,10 +5,11 @@ import sys
 from pathlib import Path
 
 
-BENCHMARK_DIR = Path(__file__).resolve().parents[3]
-REPO_DIR = BENCHMARK_DIR.parent
 METHOD_DIR = Path(__file__).resolve().parent
-DEFAULT_QUESTIONS = BENCHMARK_DIR / "datasets/questions.jsonl"
+RAG_DIR = METHOD_DIR.parent
+REPO_DIR = RAG_DIR.parent
+BENCHMARK_DIR = REPO_DIR / "benchmark"
+DEFAULT_QUESTIONS = BENCHMARK_DIR / "data/questions.jsonl"
 if str(BENCHMARK_DIR) not in sys.path:
     sys.path.insert(0, str(BENCHMARK_DIR))
 
@@ -210,7 +211,7 @@ def main():
     parser = argparse.ArgumentParser(description="Build TextRAG chunks and embeddings.")
     parser.add_argument(
         "--materials",
-        default=str(REPO_DIR / "benchmark/datasets/rvv.json"),
+        default=str(RAG_DIR / "data/rvv.json"),
     )
     parser.add_argument(
         "--questions",

@@ -1,6 +1,6 @@
 {
   "rvcodebase_train": {
-    "file_name": "../../datasets/sft/train.jsonl",
+    "file_name": "../data/train.jsonl",
     "columns": {
       "prompt": "instruction",
       "query": "input",
@@ -8,7 +8,7 @@
     }
   },
   "rvcodebase_eval": {
-    "file_name": "../../datasets/sft/eval.jsonl",
+    "file_name": "../data/eval.jsonl",
     "columns": {
       "prompt": "instruction",
       "query": "input",

@@ -1,6 +1,7 @@
 import argparse
 import json
 import re
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -8,14 +9,15 @@ from typing import Any
 from openai import OpenAI
 from tqdm import tqdm
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _jsonl_store import JsonlStore, file_lock
+
 
 SRC_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = SRC_DIR / "data"
 PROMPTS_DIR = SRC_DIR / "prompts"
 CONFIG_PATH = SRC_DIR / "llm_config.env"
-INPUT_PATH = DATA_DIR / "merge_dedupe_classify_transform.jsonl"
-VERIFY_PATH = DATA_DIR / "verify.jsonl"
-OUTPUT_PATH = DATA_DIR / "merge_dedupe_classify_transform_repair.jsonl"
+SEED_PATH = DATA_DIR / "seed.jsonl"
 PROMPT_PATH = PROMPTS_DIR / "1-repair.md"
 
 DEFAULT_SYSTEM_PROMPT = (
@@ -43,53 +45,8 @@ def parse_env_file(path: Path) -> dict[str, str]:
     return config
 
 
-def read_jsonl(path: Path) -> list[dict]:
-    rows: list[dict] = []
-    if not path.exists():
-        return rows
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            rows.append(json.loads(line))
-    return rows
-
-
 def load_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
-
-
-def load_completed_pids(path: Path) -> set[str]:
-    completed: set[str] = set()
-    if not path.exists():
-        return completed
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            item = json.loads(line)
-            pid = str(item.get("pid", "")).strip()
-            if pid:
-                completed.add(pid)
-    return completed
-
-
-def load_output_map(path: Path) -> dict[str, dict]:
-    output_map: dict[str, dict] = {}
-    if not path.exists():
-        return output_map
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            item = json.loads(line)
-            pid = str(item.get("pid", "")).strip()
-            if pid:
-                output_map[pid] = item
-    return output_map
 
 
 def get_prefixed(config: dict[str, str], prefix: str, key: str, default: str = "") -> str:
@@ -121,9 +78,10 @@ def get_client(config: dict[str, str]) -> OpenAI:
     return client
 
 
-def build_user_prompt(template: str, row: dict, verify_item: dict) -> str:
-    transform_code = str(row.get("transform", ""))
-    message = str(verify_item.get("message", ""))
+def build_user_prompt(template: str, row: dict) -> str:
+    transform_code = str(row.get("code", ""))
+    verify = row.get("verify") or {}
+    message = str(verify.get("message", ""))
     return template.format(
         transform_code=transform_code,
         message=message,
@@ -157,14 +115,13 @@ def repair_one(
     system_prompt: str,
     user_template: str,
     row: dict,
-    verify_item: dict,
     request_options: dict,
 ) -> str:
     response = client.chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": build_user_prompt(user_template, row, verify_item)},
+            {"role": "user", "content": build_user_prompt(user_template, row)},
         ],
         **request_options,
     )
@@ -174,116 +131,17 @@ def repair_one(
     return extract_code(text)
 
 
-def process_fail_row(
-    row: dict,
-    verify_map: dict[str, dict],
-    client: OpenAI,
-    model: str,
-    system_prompt: str,
-    user_template: str,
-    request_options: dict,
-) -> tuple[str, dict]:
-    pid = str(row.get("pid", "")).strip()
-    verify_item = verify_map.get(pid)
-
-    if not verify_item or str(verify_item.get("status", "")).strip() != "fail":
-        return pid, dict(row)
-
-    repaired_code = repair_one(
-        client=client,
-        model=model,
-        system_prompt=system_prompt,
-        user_template=user_template,
-        row=row,
-        verify_item=verify_item,
-        request_options=request_options,
-    )
-    return pid, {**row, "repair": repaired_code}
-
-
-def needs_repair(pid: str, verify_map: dict[str, dict]) -> bool:
-    verify_item = verify_map.get(pid)
-    if not verify_item:
-        return False
-    return str(verify_item.get("status", "")).strip() == "fail"
-
-
-def process_row_safe(
-    row: dict,
-    verify_map: dict[str, dict],
-    client: OpenAI,
-    model: str,
-    system_prompt: str,
-    user_template: str,
-    request_options: dict,
-) -> tuple[str, dict, str | None, bool]:
-    pid = str(row.get("pid", "")).strip()
-    if not needs_repair(pid, verify_map):
-        return pid, dict(row), None, False
-
-    try:
-        pid, record = process_fail_row(
-            row=row,
-            verify_map=verify_map,
-            client=client,
-            model=model,
-            system_prompt=system_prompt,
-            user_template=user_template,
-            request_options=request_options,
-        )
-        return pid, record, None, True
-    except RepairOutputError as exc:
-        return pid, {**row, "repair": "ERROR"}, exc.raw_output or "<empty>", True
-    except Exception as exc:
-        return pid, {**row, "repair": "ERROR"}, f"{type(exc).__name__}: {exc}", True
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("config_path", nargs="?", default=str(CONFIG_PATH))
     parser.add_argument("-j", type=int, default=1, help="number of parallel repair requests")
     parser.add_argument("-n", type=int, default=None, help="max number of rows to process this run")
-    parser.add_argument(
-        "--repeat",
-        action="store_true",
-        help="drop rows with repair == ERROR from repair jsonl before resuming",
-    )
     return parser.parse_args()
-
-
-def prune_error_repairs(path: Path) -> None:
-    if not path.exists():
-        return
-
-    kept_rows: list[dict] = []
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            row = json.loads(line)
-            if row.get("repair") == "ERROR":
-                continue
-            kept_rows.append(row)
-
-    with path.open("w", encoding="utf-8") as fh:
-        for row in kept_rows:
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def main() -> int:
     args = parse_args()
     config = parse_env_file(Path(args.config_path))
-    if args.repeat:
-        prune_error_repairs(OUTPUT_PATH)
-    rows = read_jsonl(INPUT_PATH)
-    verify_rows = read_jsonl(VERIFY_PATH)
-    verify_map = {
-        str(item.get("pid", "")).strip(): item
-        for item in verify_rows
-        if str(item.get("pid", "")).strip()
-    }
-    existing_output_map = load_output_map(OUTPUT_PATH)
     user_template = load_text(PROMPT_PATH)
 
     system_prompt = get_prefixed(
@@ -303,65 +161,35 @@ def main() -> int:
 
     client = get_client(config)
 
-    pending_rows = [row for row in rows if str(row.get("pid", "")).strip()]
-    if args.n is not None:
-        pending_rows = pending_rows[: max(0, args.n)]
-    pass_rows = [
-        dict(row)
-        for row in pending_rows
-        if not needs_repair(str(row.get("pid", "")).strip(), verify_map)
-    ]
-    fail_rows = [
-        row
-        for row in pending_rows
-        if needs_repair(str(row.get("pid", "")).strip(), verify_map)
-    ]
-    copied_pass_count = sum(
-        1 for row in pass_rows if str(row.get("pid", "")).strip() in existing_output_map
-    )
-    repaired_fail_count = sum(
-        1
-        for row in fail_rows
-        if "repair" in existing_output_map.get(str(row.get("pid", "")).strip(), {})
-    )
-    pending_fail_rows = [
-        row
-        for row in fail_rows
-        if "repair" not in existing_output_map.get(str(row.get("pid", "")).strip(), {})
-    ]
+    with file_lock(SEED_PATH):
+        store = JsonlStore(SEED_PATH, flush_every=50)
+        pending_rows = [
+            row for row in store.rows()
+            if str(row.get("pid", "")).strip()
+            and str(row.get("stage", "")).strip() == "verified_fail"
+        ]
+        if args.n is not None:
+            pending_rows = pending_rows[: max(0, args.n)]
 
-    tqdm.write(
-        f"[RESUME] pass_copied={copied_pass_count}/{len(pass_rows)} "
-        f"fail_repaired={repaired_fail_count}/{len(fail_rows)} "
-        f"fail_pending={len(pending_fail_rows)}"
-    )
+        tqdm.write(f"[INFO] verified_fail pending={len(pending_rows)}")
 
-    jobs = max(1, args.j)
-    with OUTPUT_PATH.open("a", encoding="utf-8") as fh:
-        for row in pass_rows:
-            pid = str(row.get("pid", "")).strip()
-            if pid in existing_output_map:
-                continue
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-            existing_output_map[pid] = row
-        fh.flush()
-
-        with tqdm(total=len(pending_fail_rows), unit="row") as progress:
+        jobs = max(1, args.j)
+        repaired = 0
+        with tqdm(total=len(pending_rows), unit="row") as progress:
             with ThreadPoolExecutor(max_workers=jobs) as executor:
                 next_index = 0
                 future_map: dict = {}
 
-                while next_index < len(pending_fail_rows) or future_map:
-                    while next_index < len(pending_fail_rows) and len(future_map) < jobs:
-                        row = pending_fail_rows[next_index]
+                while next_index < len(pending_rows) or future_map:
+                    while next_index < len(pending_rows) and len(future_map) < jobs:
+                        row = pending_rows[next_index]
                         future = executor.submit(
-                            process_row_safe,
-                            row,
-                            verify_map,
+                            repair_one,
                             client,
                             model,
                             system_prompt,
                             user_template,
+                            row,
                             request_options,
                         )
                         future_map[future] = row
@@ -370,13 +198,24 @@ def main() -> int:
                     done_future = next(as_completed(future_map))
                     row = future_map.pop(done_future)
                     pid = str(row.get("pid", "")).strip()
-                    pid, record, error_text, _ = done_future.result()
-                    fh.write(json.dumps(record, ensure_ascii=False) + "\n")
-                    fh.flush()
-                    existing_output_map[pid] = record
-                    if error_text is not None:
-                        tqdm.write(f"[REPAIR_ERROR] {pid}\n{error_text}\n")
+                    try:
+                        repaired_code = done_future.result()
+                        store.update_row(pid, {"code": repaired_code, "stage": "repaired"})
+                        repaired += 1
+                    except RepairOutputError as exc:
+                        store.update_row(pid, {"error": "RepairOutputError"})
+                        tqdm.write(f"[REPAIR_ERROR] {pid}\n{exc.raw_output or '<empty>'}\n")
+                    except Exception as exc:
+                        store.update_row(pid, {"error": f"{type(exc).__name__}: {exc}"})
+                        tqdm.write(f"[REPAIR_ERROR] {pid} {type(exc).__name__}: {exc}")
                     progress.update(1)
+                    store.flush_if_due()
+
+        store.flush()
+
+    print(f"[DONE] repaired={repaired} of {len(pending_rows)}")
+    if repaired > 0:
+        print("[NEXT] run `python3 seed/1.6-verify.py` to re-verify repaired rows")
     return 0
 
 

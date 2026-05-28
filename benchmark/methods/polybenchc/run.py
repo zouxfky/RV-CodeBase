@@ -12,7 +12,7 @@ REPO_DIR = BENCHMARK_DIR.parent
 OPTIMIZE_DIR = REPO_DIR / "optimize"
 METHODS_DIR = BENCHMARK_DIR / "methods"
 
-DEFAULT_DATASET = BENCHMARK_DIR / "datasets/polybenchc.jsonl"
+DEFAULT_DATASET = BENCHMARK_DIR / "data/polybenchc.jsonl"
 DEFAULT_OUTPUT = BENCHMARK_DIR / "results/polybenchc/default/results.jsonl"
 DEFAULT_CONFIG = REPO_DIR / "llm_config.env"
 DEFAULT_TMP_DIR = REPO_DIR / "tmp/benchmark_polybenchc"

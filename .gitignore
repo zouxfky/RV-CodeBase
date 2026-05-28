@@ -13,11 +13,14 @@ tmp/
 # Large raw/source data not suitable for a normal GitHub repo
 source/
 
-# Data
+# Data (per-module data/ folders are runtime/large artifacts)
 data/
+benchmark/data/
+rag/data/
+sft/data/
 
 # SFT artifacts
-benchmark/datasets/sft/
+sft/results/
 benchmark/sft/results/
 
 # Local config (use llm_config.example.env as the template)

@@ -9,15 +9,18 @@ from pathlib import Path
 
 BENCHMARK_DIR = Path(__file__).resolve().parents[3]
 REPO_DIR = BENCHMARK_DIR.parent
-DEFAULT_QUESTIONS = BENCHMARK_DIR / "datasets/questions.jsonl"
+RAG_DIR = REPO_DIR / "rag"
+DEFAULT_QUESTIONS = BENCHMARK_DIR / "data/questions.jsonl"
 DEFAULT_RESULTS_DIR = BENCHMARK_DIR / "results/qa"
 if str(BENCHMARK_DIR) not in sys.path:
     sys.path.insert(0, str(BENCHMARK_DIR))
+if str(RAG_DIR) not in sys.path:
+    sys.path.insert(0, str(RAG_DIR))
 
 from common.io import read_jsonl
 from common.llm_config import load_llm_config
 from common.qa_schema import validate_qa_questions
-from methods.qa.text_rag.build_index import (
+from text_rag.build_index import (
     DEFAULT_CHUNK_EMBEDDINGS,
     DEFAULT_CHUNKS,
     DEFAULT_QUESTION_EMBEDDINGS,
@@ -332,7 +335,7 @@ def main():
     parser.add_argument("--top-k", type=int, default=3)
     parser.add_argument(
         "--materials",
-        default=str(REPO_DIR / "benchmark/datasets/rvv.json"),
+        default=str(REPO_DIR / "rag/data/rvv.json"),
     )
     parser.add_argument(
         "--chunks",

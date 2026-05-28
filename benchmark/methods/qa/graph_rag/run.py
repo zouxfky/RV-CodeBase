@@ -10,15 +10,18 @@ from pathlib import Path
 
 BENCHMARK_DIR = Path(__file__).resolve().parents[3]
 REPO_DIR = BENCHMARK_DIR.parent
-DEFAULT_QUESTIONS = BENCHMARK_DIR / "datasets/questions.jsonl"
+RAG_DIR = REPO_DIR / "rag"
+DEFAULT_QUESTIONS = BENCHMARK_DIR / "data/questions.jsonl"
 DEFAULT_RESULTS_DIR = BENCHMARK_DIR / "results/qa"
 if str(BENCHMARK_DIR) not in sys.path:
     sys.path.insert(0, str(BENCHMARK_DIR))
+if str(RAG_DIR) not in sys.path:
+    sys.path.insert(0, str(RAG_DIR))
 
 from common.io import read_json, read_jsonl, write_jsonl
 from common.llm_config import load_llm_config
 from common.qa_schema import validate_qa_questions
-from methods.qa.graph_rag.build_graph import (
+from graph_rag.build_graph import (
     DEFAULT_ALIAS_INDEX,
     DEFAULT_EDGES,
     DEFAULT_NODES,
@@ -31,7 +34,7 @@ from methods.qa.graph_rag.build_graph import (
     extract_question_concepts,
     norm_key,
 )
-from methods.qa.text_rag.build_index import (
+from text_rag.build_index import (
     DEFAULT_CHUNK_EMBEDDINGS,
     DEFAULT_CHUNKS,
     DEFAULT_QUESTION_EMBEDDINGS,
@@ -866,7 +869,7 @@ def main():
     parser.add_argument("--embedding-top-k", type=int, default=8)
     parser.add_argument("--graph-depth", type=int, default=1)
     parser.add_argument("--debug-retrieval", action="store_true")
-    parser.add_argument("--materials", default=str(REPO_DIR / "benchmark/datasets/rvv.json"))
+    parser.add_argument("--materials", default=str(REPO_DIR / "rag/data/rvv.json"))
     parser.add_argument("--chunks", default=str(DEFAULT_CHUNKS))
     parser.add_argument("--chunk-embeddings", default=str(DEFAULT_CHUNK_EMBEDDINGS))
     parser.add_argument("--question-embeddings", default=str(DEFAULT_QUESTION_EMBEDDINGS))

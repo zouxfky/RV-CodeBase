@@ -12,7 +12,7 @@ from openai import RateLimitError
 SRC_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = SRC_DIR / "data"
 CONFIG_PATH = SRC_DIR / "llm_config.env"
-MERGE_PATH = DATA_DIR / "merge.jsonl"
+MERGE_PATH = DATA_DIR / "collected_seeds.jsonl"
 EMBEDDINGS_PATH = DATA_DIR / "embeddings.jsonl"
 MAX_RETRIES = 8
 BACKOFF_BASE_SEC = 2
@@ -185,7 +185,7 @@ def main() -> int:
     items = build_items(rows)
 
     if not items:
-        raise ValueError("no non-empty quertion rows found in merge.jsonl")
+        raise ValueError("no non-empty quertion rows found in collected_seeds.jsonl")
 
     existing_cache: dict[str, dict] = {}
     if EMBEDDINGS_PATH.exists():

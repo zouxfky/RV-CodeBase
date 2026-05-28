@@ -1,19 +1,22 @@
 import argparse
 import json
 import re
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from openai import OpenAI
 from tqdm import tqdm
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _jsonl_store import JsonlStore, file_lock
+
 
 SRC_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = SRC_DIR / "data"
 PROMPTS_DIR = SRC_DIR / "prompts"
 CONFIG_PATH = SRC_DIR / "llm_config.env"
-INPUT_PATH = DATA_DIR / "merge_dedupe.jsonl"
-OUTPUT_PATH = DATA_DIR / "merge_dedupe_classify.jsonl"
+SEED_PATH = DATA_DIR / "seed.jsonl"
 PROMPT_PATH = PROMPTS_DIR / "1-classify-category.md"
 RULE_PATH = PROMPTS_DIR / "1-classify-rule.md"
 
@@ -50,33 +53,6 @@ def parse_env_file(path: Path) -> dict[str, str]:
 
 def load_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
-
-
-def read_jsonl(path: Path) -> list[dict]:
-    rows: list[dict] = []
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            rows.append(json.loads(line))
-    return rows
-
-
-def load_completed_pids(path: Path) -> set[str]:
-    completed: set[str] = set()
-    if not path.exists():
-        return completed
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            item = json.loads(line)
-            pid = str(item.get("pid", "")).strip()
-            if pid:
-                completed.add(pid)
-    return completed
 
 
 def get_client(config: dict[str, str]) -> OpenAI:
@@ -159,41 +135,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("config_path", nargs="?", default=str(CONFIG_PATH))
     parser.add_argument("-j", type=int, default=1, help="number of parallel classification requests")
     parser.add_argument("-n", type=int, default=None, help="max number of rows to classify this run")
-    parser.add_argument(
-        "--repeat",
-        action="store_true",
-        help="drop rows with category == ERROR from classify jsonl before resuming",
-    )
     return parser.parse_args()
-
-
-def prune_error_rows(path: Path) -> None:
-    if not path.exists():
-        return
-
-    kept_rows: list[dict] = []
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            row = json.loads(line)
-            if str(row.get("category", "")).strip() == "ERROR":
-                continue
-            kept_rows.append(row)
-
-    with path.open("w", encoding="utf-8") as fh:
-        for row in kept_rows:
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def main() -> int:
     args = parse_args()
     config = parse_env_file(Path(args.config_path))
-    if args.repeat:
-        prune_error_rows(OUTPUT_PATH)
-    rows = read_jsonl(INPUT_PATH)
-    completed_pids = load_completed_pids(OUTPUT_PATH)
 
     user_template = load_text(PROMPT_PATH)
     classification_rule = load_text(RULE_PATH)
@@ -206,15 +153,17 @@ def main() -> int:
     max_completion_tokens = int(config.get("max_completion_tokens", "1024").strip() or "1024")
     client = get_client(config)
 
-    pending_rows = [
-        row for row in rows
-        if str(row.get("pid", "")).strip() and str(row.get("pid", "")).strip() not in completed_pids
-    ]
-    if args.n is not None:
-        pending_rows = pending_rows[: max(0, args.n)]
+    with file_lock(SEED_PATH):
+        store = JsonlStore(SEED_PATH, flush_every=50)
+        pending_rows = [
+            row for row in store.rows()
+            if str(row.get("pid", "")).strip()
+            and str(row.get("stage", "")).strip() == "deduped"
+        ]
+        if args.n is not None:
+            pending_rows = pending_rows[: max(0, args.n)]
 
-    progress = tqdm(total=len(pending_rows), desc="classify", unit="sample")
-    with OUTPUT_PATH.open("a", encoding="utf-8") as fh:
+        progress = tqdm(total=len(pending_rows), desc="classify", unit="sample")
         jobs = max(1, args.j)
         with ThreadPoolExecutor(max_workers=jobs) as executor:
             next_index = 0
@@ -239,20 +188,18 @@ def main() -> int:
 
                 done_future = next(as_completed(future_map))
                 row = future_map.pop(done_future)
+                pid = str(row.get("pid", "")).strip()
                 try:
                     label = done_future.result()
-                except Exception:
-                    label = "ERROR"
-
-                record = {
-                    **row,
-                    "category": label,
-                }
-                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
-                fh.flush()
+                    store.update_row(pid, {"category": label, "stage": "classified"})
+                except Exception as exc:
+                    store.update_row(pid, {"error": f"{type(exc).__name__}: {exc}"})
+                    tqdm.write(f"[CLASSIFY_ERROR] {pid} {type(exc).__name__}: {exc}")
                 progress.update(1)
+                store.flush_if_due()
 
-    progress.close()
+        progress.close()
+        store.flush()
     return 0
 
 

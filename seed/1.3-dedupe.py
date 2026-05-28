@@ -1,12 +1,15 @@
 import json
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _jsonl_store import atomic_write_jsonl, read_jsonl
 
 
 SRC_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = SRC_DIR / "data"
-MERGE_PATH = DATA_DIR / "merge.jsonl"
-COMPLETED_PATH = DATA_DIR / "match.jsonl"
-OUTPUT_PATH = DATA_DIR / "merge_dedupe.jsonl"
+COLLECTED_PATH = DATA_DIR / "collected_seeds.jsonl"
+OUTPUT_PATH = DATA_DIR / "seed.jsonl"
 
 
 class UnionFind:
@@ -32,17 +35,6 @@ class UnionFind:
             self.parent[rb] = ra
 
 
-def read_jsonl(path: Path) -> list[dict]:
-    rows: list[dict] = []
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            rows.append(json.loads(line))
-    return rows
-
-
 def score_row(row: dict) -> tuple[int, int, str]:
     pid = str(row.get("pid", "")).strip()
     quertion_len = len(str(row.get("quertion", "")).strip())
@@ -51,7 +43,7 @@ def score_row(row: dict) -> tuple[int, int, str]:
 
 
 def main() -> int:
-    rows = read_jsonl(MERGE_PATH)
+    rows = read_jsonl(COLLECTED_PATH)
     rows_by_pid = {
         str(row.get("pid", "")).strip(): row
         for row in rows
@@ -64,19 +56,23 @@ def main() -> int:
         uf.add(pid)
 
     true_edge_count = 0
-    if COMPLETED_PATH.exists():
-        for item in read_jsonl(COMPLETED_PATH):
-            source_pid = str(item.get("source_pid", "")).strip()
-            if source_pid not in alive_pids:
+    rows_with_match = 0
+    for row in rows:
+        source_pid = str(row.get("pid", "")).strip()
+        if source_pid not in alive_pids:
+            continue
+        match = row.get("match")
+        if not isinstance(match, dict):
+            continue
+        rows_with_match += 1
+        for target in match.get("target", []) or []:
+            if target.get("result") is not True:
                 continue
-            for target in item.get("target", []):
-                if target.get("result") is not True:
-                    continue
-                target_pid = str(target.get("pid", "")).strip()
-                if target_pid not in alive_pids or target_pid == source_pid:
-                    continue
-                uf.union(source_pid, target_pid)
-                true_edge_count += 1
+            target_pid = str(target.get("pid", "")).strip()
+            if target_pid not in alive_pids or target_pid == source_pid:
+                continue
+            uf.union(source_pid, target_pid)
+            true_edge_count += 1
 
     components: dict[str, set[str]] = {}
     for pid in alive_pids:
@@ -94,16 +90,19 @@ def main() -> int:
             if pid != keep_pid:
                 delete_pids.add(pid)
 
-    kept_rows = [
-        row for row in rows
-        if str(row.get("pid", "")).strip() not in delete_pids
-    ]
+    kept_rows: list[dict] = []
+    for row in rows:
+        pid = str(row.get("pid", "")).strip()
+        if not pid or pid in delete_pids:
+            continue
+        new_row = {k: v for k, v in row.items() if k != "match"}
+        new_row["stage"] = "deduped"
+        kept_rows.append(new_row)
 
-    with OUTPUT_PATH.open("w", encoding="utf-8") as fh:
-        for row in kept_rows:
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    atomic_write_jsonl(OUTPUT_PATH, kept_rows)
 
     print(f"input_rows={len(rows)}")
+    print(f"rows_with_match={rows_with_match}")
     print(f"true_edges={true_edge_count}")
     print(f"duplicate_groups={duplicate_groups}")
     print(f"deleted_rows={len(delete_pids)}")

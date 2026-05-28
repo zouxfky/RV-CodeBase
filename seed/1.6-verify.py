@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -15,16 +16,19 @@ except ModuleNotFoundError as exc:
         "install it with: python3 -m pip install tqdm"
     ) from exc
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _jsonl_store import JsonlStore, file_lock
+
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_INPUT_PATH = ROOT_DIR / "data" / "merge_dedupe_classify_transform.jsonl"
-DEFAULT_REPAIR_INPUT_PATH = ROOT_DIR / "data" / "merge_dedupe_classify_transform_repair.jsonl"
-DEFAULT_OUTPUT_PATH = ROOT_DIR / "data" / "verify.jsonl"
+DEFAULT_SEED_PATH = ROOT_DIR / "data" / "seed.jsonl"
 DEFAULT_TMP_DIR = ROOT_DIR / "tmp" / "verify"
 CODE_BLOCK_PATTERN = re.compile(r"^```[^\n]*\n(?P<code>.*)\n```$", re.DOTALL)
 PID_SAFE_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
 SOLVE_PATTERN = re.compile(r"\bvoid\s+solve\s*\(")
 MAIN_PATTERN = re.compile(r"\b(?:int|auto|void|signed\s+int)\s+main\s*\(")
+
+PENDING_STAGES = {"transformed", "repaired"}
 
 
 def detect_default_compiler() -> str:
@@ -46,18 +50,13 @@ def detect_default_compiler() -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Compile-check transformed C++ code from a JSONL file."
+        description="Compile-check transformed C++ code in seed.jsonl in place."
     )
     parser.add_argument(
-        "--input",
-        dest="input_path",
-        default=str(DEFAULT_INPUT_PATH),
-        help="path to the JSONL file to compile-check",
-    )
-    parser.add_argument(
-        "--output",
-        default=str(DEFAULT_OUTPUT_PATH),
-        help="path to verify.jsonl output",
+        "--seed",
+        dest="seed_path",
+        default=str(DEFAULT_SEED_PATH),
+        help="path to seed.jsonl (in-place updated)",
     )
     parser.add_argument(
         "--tmp-dir",
@@ -93,109 +92,15 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="only verify the first N pending rows; 0 means no limit",
     )
-    parser.add_argument(
-        "--repeat",
-        action="store_true",
-        help="use repair jsonl as input, drop failed records from verify.jsonl before resuming, and remove failed pids from repair jsonl after verification",
-    )
     return parser.parse_args()
 
 
-def iter_jsonl(path: Path):
-    with path.open("r", encoding="utf-8") as fh:
-        for line_no, raw_line in enumerate(fh, start=1):
-            line = raw_line.strip()
-            if not line:
-                continue
-            yield line_no, json.loads(line)
-
-
-def load_verified_pids(path: Path) -> set[str]:
-    if not path.exists():
-        return set()
-
-    verified: set[str] = set()
-    with path.open("r", encoding="utf-8") as fh:
-        for raw_line in fh:
-            line = raw_line.strip()
-            if not line:
-                continue
-            row = json.loads(line)
-            pid = str(row.get("pid", "")).strip()
-            if pid:
-                verified.add(pid)
-    return verified
-
-
-def prune_failed_results(path: Path) -> None:
-    if not path.exists():
-        return
-
-    kept_rows: list[dict] = []
-    with path.open("r", encoding="utf-8") as fh:
-        for raw_line in fh:
-            line = raw_line.strip()
-            if not line:
-                continue
-            row = json.loads(line)
-            if str(row.get("status", "")).strip() == "pass":
-                kept_rows.append(row)
-
-    with path.open("w", encoding="utf-8") as fh:
-        for row in kept_rows:
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-
-def prune_repair_rows_by_failed_pids(repair_path: Path, verify_path: Path) -> None:
-    if not repair_path.exists() or not verify_path.exists():
-        return
-
-    failed_pids: set[str] = set()
-    with verify_path.open("r", encoding="utf-8") as fh:
-        for raw_line in fh:
-            line = raw_line.strip()
-            if not line:
-                continue
-            row = json.loads(line)
-            if str(row.get("status", "")).strip() != "fail":
-                continue
-            pid = str(row.get("pid", "")).strip()
-            if pid:
-                failed_pids.add(pid)
-
-    if not failed_pids:
-        return
-
-    kept_rows: list[dict] = []
-    with repair_path.open("r", encoding="utf-8") as fh:
-        for raw_line in fh:
-            line = raw_line.strip()
-            if not line:
-                continue
-            row = json.loads(line)
-            pid = str(row.get("pid", "")).strip()
-            if pid in failed_pids:
-                continue
-            kept_rows.append(row)
-
-    with repair_path.open("w", encoding="utf-8") as fh:
-        for row in kept_rows:
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-
-def extract_code(transform: str) -> str:
-    text = transform.strip()
+def extract_code_block(text: str) -> str:
+    text = text.strip()
     match = CODE_BLOCK_PATTERN.match(text)
     if match:
         return match.group("code")
-    return transform
-
-
-def get_candidate_code(row: dict) -> str:
-    repair = str(row.get("repair", "")).strip()
-    if repair:
-        return str(row.get("repair", ""))
-    return str(row.get("transform", ""))
+    return text
 
 
 def sanitize_pid(pid: str) -> str:
@@ -217,18 +122,8 @@ def evaluate_format(code: str) -> tuple[list[str], int]:
     return failed_checks, solve_count
 
 
-def build_result(
-    pid: str,
-    status: str,
-    error_type: str,
-    message: str,
-) -> dict[str, str]:
-    return {
-        "pid": pid,
-        "status": status,
-        "error_type": error_type,
-        "message": message,
-    }
+def build_verify(status: str, error_type: str, message: str) -> dict[str, str]:
+    return {"status": status, "error_type": error_type, "message": message}
 
 
 def compile_one(
@@ -239,26 +134,20 @@ def compile_one(
     compiler: str,
     cpp_std: str,
     timeout: int,
-) -> dict[str, str]:
+) -> tuple[str, dict[str, str]]:
     pid = str(row.get("pid", "")).strip() or f"line_{line_no}"
-    candidate = get_candidate_code(row)
-    code = extract_code(candidate)
+    candidate = str(row.get("code", ""))
+    code = extract_code_block(candidate)
 
     if not code.strip() or candidate.strip() == "ERROR":
-        return build_result(
-            pid=pid,
-            status="fail",
-            error_type="format",
-            message="failed format checks: transform_empty",
+        return pid, build_verify(
+            "fail", "format", "failed format checks: code_empty"
         )
 
     failed_checks, _ = evaluate_format(code)
     if failed_checks:
-        return build_result(
-            pid=pid,
-            status="fail",
-            error_type="format",
-            message="failed format checks: " + ", ".join(failed_checks),
+        return pid, build_verify(
+            "fail", "format", "failed format checks: " + ", ".join(failed_checks)
         )
 
     safe_pid = sanitize_pid(pid)
@@ -294,80 +183,59 @@ def compile_one(
         if exc.stderr:
             message_parts.append(exc.stderr)
         message_parts.append(f"compile timeout after {timeout}s")
-        return build_result(
-            pid=pid,
-            status="fail",
-            error_type="compile",
-            message="\n".join(part.rstrip() for part in message_parts if part).strip(),
+        return pid, build_verify(
+            "fail",
+            "compile",
+            "\n".join(part.rstrip() for part in message_parts if part).strip(),
         )
     except Exception as exc:
-        return build_result(
-            pid=pid,
-            status="fail",
-            error_type="compile",
-            message=str(exc),
-        )
+        return pid, build_verify("fail", "compile", str(exc))
 
     if completed.returncode == 0:
-        return build_result(
-            pid=pid,
-            status="pass",
-            error_type="",
-            message="",
-        )
+        return pid, build_verify("pass", "", "")
 
     message = (completed.stderr or completed.stdout or "").strip()
     if not message:
         message = f"compiler exited with code {completed.returncode}"
-    return build_result(
-        pid=pid,
-        status="fail",
-        error_type="compile",
-        message=message,
-    )
+    return pid, build_verify("fail", "compile", message)
 
 
 def main() -> int:
     args = parse_args()
-    input_path = Path(args.input_path)
-    if args.repeat:
-        input_path = DEFAULT_REPAIR_INPUT_PATH
-    output_path = Path(args.output)
+    seed_path = Path(args.seed_path)
     tmp_dir = Path(args.tmp_dir)
     src_dir = tmp_dir / "src"
     obj_dir = tmp_dir / "obj"
 
-    if not input_path.exists():
-        raise FileNotFoundError(f"input file not found: {input_path}")
+    if not seed_path.exists():
+        raise FileNotFoundError(f"seed file not found: {seed_path}")
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
     src_dir.mkdir(parents=True, exist_ok=True)
     obj_dir.mkdir(parents=True, exist_ok=True)
 
-    if args.repeat:
-        prune_failed_results(output_path)
+    with file_lock(seed_path):
+        store = JsonlStore(seed_path, flush_every=50)
+        all_rows = store.rows()
+        pending: list[tuple[int, dict]] = []
+        for line_no, row in enumerate(all_rows, start=1):
+            pid = str(row.get("pid", "")).strip()
+            if not pid:
+                continue
+            stage = str(row.get("stage", "")).strip()
+            if stage not in PENDING_STAGES:
+                continue
+            pending.append((line_no, row))
 
-    verified_pids = load_verified_pids(output_path)
-    pending: list[tuple[int, dict]] = []
-    total_rows = 0
+        if args.limit > 0:
+            pending = pending[: args.limit]
 
-    for line_no, row in iter_jsonl(input_path):
-        total_rows += 1
-        pid = str(row.get("pid", "")).strip()
-        if pid in verified_pids:
-            continue
-        pending.append((line_no, row))
+        if not pending:
+            print("no pending rows")
+            return 0
 
-    if args.limit > 0:
-        pending = pending[: args.limit]
+        pass_count = 0
+        fail_count = 0
 
-    if not pending:
-        return 0
-
-    pass_count = 0
-    fail_count = 0
-
-    with output_path.open("a", encoding="utf-8") as out_fh:
         with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as executor:
             future_map = {
                 executor.submit(
@@ -385,26 +253,25 @@ def main() -> int:
 
             with tqdm(total=len(pending), desc="compile", unit="file") as pbar:
                 for future in as_completed(future_map):
-                    result = future.result()
-                    out_fh.write(json.dumps(result, ensure_ascii=False) + "\n")
-                    out_fh.flush()
+                    pid, verify = future.result()
+                    new_stage = "verified_pass" if verify["status"] == "pass" else "verified_fail"
+                    store.update_row(pid, {"verify": verify, "stage": new_stage})
 
-                    if result["status"] == "pass":
+                    if verify["status"] == "pass":
                         pass_count += 1
                     else:
                         fail_count += 1
 
                     pbar.set_postfix(pass_count=pass_count, fail_count=fail_count)
                     pbar.update(1)
+                    store.flush_if_due()
+
+        store.flush()
 
     print("done")
     print(f"new_pass={pass_count}")
     print(f"new_fail={fail_count}")
     print(f"total_written={pass_count + fail_count}")
-
-    if args.repeat:
-        prune_repair_rows_by_failed_pids(DEFAULT_REPAIR_INPUT_PATH, output_path)
-
     return 0
 
 

@@ -2,12 +2,12 @@
 # Merge a LoRA adapter into its base model and export full weights.
 #
 # Usage:
-#   benchmark/sft/scripts/merge_lora.sh <base_model> <adapter_dir> <export_dir> [template]
+#   sft/scripts/merge_lora.sh <base_model> <adapter_dir> <export_dir> [template]
 # Example:
-#   benchmark/sft/scripts/merge_lora.sh \
+#   sft/scripts/merge_lora.sh \
 #       Qwen/Qwen2.5-Coder-7B-Instruct \
-#       benchmark/sft/results/qwen3.5-9b-lora \
-#       benchmark/sft/results/qwen3.5-9b-merged \
+#       sft/results/qwen3.5-9b-lora \
+#       sft/results/qwen3.5-9b-merged \
 #       qwen
 set -euo pipefail
 

@@ -7,8 +7,8 @@ from pathlib import Path
 
 BENCHMARK_DIR = Path(__file__).resolve().parents[2]
 REPO_DIR = BENCHMARK_DIR.parent
-DEFAULT_RVV_JSON = BENCHMARK_DIR / "datasets" / "rvv.json"
-DEFAULT_QUESTIONS = BENCHMARK_DIR / "datasets/questions.jsonl"
+DEFAULT_RVV_JSON = REPO_DIR / "rag" / "data" / "rvv.json"
+DEFAULT_QUESTIONS = BENCHMARK_DIR / "data/questions.jsonl"
 DEFAULT_RESULTS_DIR = BENCHMARK_DIR / "results/qa"
 if str(BENCHMARK_DIR) not in sys.path:
     sys.path.insert(0, str(BENCHMARK_DIR))

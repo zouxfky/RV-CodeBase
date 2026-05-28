@@ -6,10 +6,10 @@
 #   model=<served_model_name>
 #
 # Usage:
-#   benchmark/sft/scripts/serve_vllm.sh <model_path> [served_name] [port] [tp]
+#   sft/scripts/serve_vllm.sh <model_path> [served_name] [port] [tp]
 # Example:
-#   benchmark/sft/scripts/serve_vllm.sh \
-#       benchmark/sft/results/qwen3.5-9b-merged \
+#   sft/scripts/serve_vllm.sh \
+#       sft/results/qwen3.5-9b-merged \
 #       qwen3.5-9b-sft 8000 1
 set -euo pipefail
 

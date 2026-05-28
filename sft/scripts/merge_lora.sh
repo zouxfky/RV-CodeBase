@@ -8,13 +8,13 @@
 #       Qwen/Qwen3.5-9B \
 #       sft/results/qwen3.5-9b-lora \
 #       sft/results/qwen3.5-9b-merged \
-#       qwen3_5
+#       qwen3
 set -euo pipefail
 
 BASE="${1:?base model path or HF id required}"
 ADAPTER="${2:?adapter dir required}"
 EXPORT_DIR="${3:?export dir required}"
-TEMPLATE="${4:-qwen3_5}"
+TEMPLATE="${4:-qwen3}"
 
 if ! command -v llamafactory-cli >/dev/null 2>&1; then
     echo "llamafactory-cli not found. Install with: pip install llamafactory" >&2

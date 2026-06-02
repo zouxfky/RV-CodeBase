@@ -7,12 +7,13 @@ Usage:
   python download.py                       # all subsets
   python download.py --subset benchmark    # one subset
   python download.py --subset rag sft      # multiple subsets
+  python download.py --subset models       # all merged SFT models
   python download.py --list                # show available subsets
   python download.py --force --subset sft  # re-download even if present
 
 Authentication:
-  The dataset repo is private. Provide an HF token with read access by either
-  running `hf auth login` once, or exporting HF_TOKEN.
+  Some dataset/model repos are private. Provide an HF token with read access by
+  either running `hf auth login` once, or exporting HF_TOKEN.
 """
 import argparse
 import shutil
@@ -22,11 +23,16 @@ from pathlib import Path
 try:
     from huggingface_hub import snapshot_download
 except ImportError:
-    sys.exit("huggingface_hub not installed.\n  pip install huggingface_hub")
+    snapshot_download = None
 
 
 REPO_DIR = Path(__file__).resolve().parent
 DATASET_REPO = "RV-CodeBase/dataset"
+MODEL_REPOS = {
+    "qwen3.5-9b-sft": "RV-CodeBase/qwen3.5-9b-sft",
+    "qwen3.5-27b-sft": "RV-CodeBase/qwen3.5-27b-sft",
+    "llama3.1-8b-sft": "RV-CodeBase/llama3.1-8b-sft",
+}
 
 # subset -> (repo_id, repo_type, remote_prefix, local_target)
 # remote_prefix "" means the entire repo (use for model checkpoints).
@@ -35,17 +41,35 @@ SUBSETS = {
     "rag":       (DATASET_REPO, "dataset", "rag",       REPO_DIR / "rag" / "data"),
     "sft":       (DATASET_REPO, "dataset", "sft",       REPO_DIR / "sft" / "data"),
     "pipeline":  (DATASET_REPO, "dataset", "data",      REPO_DIR / "data"),
-    # Add model repos here when ready, e.g.:
-    # "model-llama-8b": (
-    #     "RV-CodeBase/Llama-3.1-8B-SFT", "model", "",
-    #     REPO_DIR / "sft" / "results" / "llama-3.1-8b-sft",
-    # ),
+    "model-qwen3.5-9b-sft": (
+        MODEL_REPOS["qwen3.5-9b-sft"], "model", "",
+        REPO_DIR / "sft" / "results" / "qwen3.5-9b-merged",
+    ),
+    "model-qwen3.5-27b-sft": (
+        MODEL_REPOS["qwen3.5-27b-sft"], "model", "",
+        REPO_DIR / "sft" / "results" / "qwen3.5-27b-merged",
+    ),
+    "model-llama3.1-8b-sft": (
+        MODEL_REPOS["llama3.1-8b-sft"], "model", "",
+        REPO_DIR / "sft" / "results" / "llama3.1-8b-merged",
+    ),
+}
+
+GROUPS = {
+    "models": [
+        "model-qwen3.5-9b-sft",
+        "model-qwen3.5-27b-sft",
+        "model-llama3.1-8b-sft",
+    ],
 }
 
 SKIP_NAMES = {".cache", ".gitattributes", ".huggingface", ".DS_Store"}
 
 
 def fetch(name, repo_id, repo_type, remote_prefix, local_target, force=False):
+    if snapshot_download is None:
+        sys.exit("huggingface_hub not installed.\n  pip install huggingface_hub")
+
     populated = local_target.exists() and any(local_target.iterdir())
     if populated and not force:
         print(f"[skip] {name}: {local_target.relative_to(REPO_DIR)} already populated (--force to redownload)")
@@ -95,12 +119,12 @@ def main():
     parser = argparse.ArgumentParser(
         description="Download RV-CodeBase data and models from HuggingFace.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Subsets: " + ", ".join(SUBSETS.keys()),
+        epilog="Subsets: " + ", ".join(list(SUBSETS.keys()) + list(GROUPS.keys())),
     )
     parser.add_argument(
         "--subset",
         nargs="+",
-        choices=list(SUBSETS.keys()),
+        choices=list(SUBSETS.keys()) + list(GROUPS.keys()),
         help="which subsets to download (default: all)",
     )
     parser.add_argument(
@@ -116,13 +140,24 @@ def main():
     args = parser.parse_args()
 
     if args.list:
-        width = max(len(n) for n in SUBSETS)
+        width = max(len(n) for n in list(SUBSETS) + list(GROUPS))
         for name, (repo_id, repo_type, prefix, target) in SUBSETS.items():
             remote = f"{repo_id}:{prefix or '/'}"
             print(f"  {name:<{width}}  {remote:<40}  -> {target.relative_to(REPO_DIR)}")
+        for name, members in GROUPS.items():
+            print(f"  {name:<{width}}  group: {', '.join(members)}")
         return 0
 
-    targets = args.subset if args.subset else list(SUBSETS.keys())
+    requested = args.subset if args.subset else list(SUBSETS.keys())
+    targets = []
+    seen = set()
+    for name in requested:
+        expanded = GROUPS.get(name, [name])
+        for target in expanded:
+            if target not in seen:
+                targets.append(target)
+                seen.add(target)
+
     for name in targets:
         repo_id, repo_type, prefix, target = SUBSETS[name]
         fetch(name, repo_id, repo_type, prefix, target, force=args.force)

@@ -7,7 +7,11 @@ RV-CodeBase is, to the best of our knowledge, the first systematic dataset for c
 
 Built on top of these, RV-CodeBase also defines two downstream benchmark tasks: (1) RAG-based RVV instruction question answering, and (2) supervised fine-tuning for optimization-oriented code generation.
 
-- 🤗 HF Datasets: [ ]( )
+- 🤗 HF Dataset: [RV-CodeBase/dataset](https://huggingface.co/datasets/RV-CodeBase/dataset)
+- 🤗 HF Models:
+  [qwen3.5-9b-sft](https://huggingface.co/RV-CodeBase/qwen3.5-9b-sft),
+  [qwen3.5-27b-sft](https://huggingface.co/RV-CodeBase/qwen3.5-27b-sft),
+  [llama3.1-8b-sft](https://huggingface.co/RV-CodeBase/llama3.1-8b-sft)
 
 ## Overview
 
@@ -46,6 +50,14 @@ sudo yum install -y gcc-c++
 ```
 
 After the host machine produces the dataset artifacts, sync them to the RISC-V machine and run the build and verification scripts there to compile and execute each generated program, collecting correctness and performance results.
+
+## Download
+
+Download RV-CodeBase artifacts from Hugging Face:
+
+```bash
+python download.py
+```
 
 ## Generate RV-CodeBase
 
@@ -100,4 +112,3 @@ Score per-run and build the cross-model summary table:
 python3 benchmark/eval/perf/summary.py             --input benchmark/results/<bench>/<model>/results.jsonl
 python3 benchmark/eval/perf/build_summary_table.py     # writes benchmark/results/summary_table.xlsx
 ```
-

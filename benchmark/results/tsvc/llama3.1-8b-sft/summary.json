@@ -2,18 +2,18 @@
   "num_samples": 151,
   "round1": {
     "compile_pass_rate": "0.4834",
-    "correct_pass_rate": "0.2649",
-    "positive_rate": "0.5500",
-    "speedup_over_1_5_rate": "0.2750",
-    "geometric_mean_speedup": "1.1726",
-    "max_speedup": "11.0551"
+    "correct_pass_rate": "0.1854",
+    "positive_rate": "0.3929",
+    "speedup_over_1_5_rate": "0.0714",
+    "geometric_mean_speedup": "0.8875",
+    "max_speedup": "1.6903"
   },
   "overall": {
     "compile_pass_rate": "0.6159",
-    "correct_pass_rate": "0.3113",
-    "positive_rate": "0.7872",
-    "speedup_over_1_5_rate": "0.3404",
-    "geometric_mean_speedup": "1.2635",
-    "max_speedup": "11.1515"
+    "correct_pass_rate": "0.2252",
+    "positive_rate": "0.7059",
+    "speedup_over_1_5_rate": "0.1176",
+    "geometric_mean_speedup": "0.9603",
+    "max_speedup": "1.7394"
   }
 }

@@ -1,7 +1,10 @@
 tqdm
 openai
-huggingface_hub
+huggingface_hub==1.16.4
 
-# SFT (training + serving). Optional — install only when fine-tuning.
-llamafactory
+# SFT (training + serving). Optional - install only when fine-tuning.
+# Qwen3.5 currently works with the local editable LLaMA-Factory checkout and
+# the pinned transformers version below.
+transformers==5.6.0
+tensorboard==2.20.0
 vllm

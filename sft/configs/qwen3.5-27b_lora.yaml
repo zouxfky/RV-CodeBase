@@ -10,12 +10,13 @@ lora_target: all
 lora_rank: 16
 lora_alpha: 32
 lora_dropout: 0.05
+deepspeed: /home/zouxiaofeng/LLaMA-Factory/examples/deepspeed/ds_z3_config.json
 
 ### dataset
 dataset_dir: sft/configs
 dataset: rvcodebase_train
 eval_dataset: rvcodebase_eval
-template: qwen3_5
+template: qwen3_5_nothink
 cutoff_len: 8192
 max_samples: 100000
 overwrite_cache: true
@@ -32,9 +33,9 @@ report_to: tensorboard
 
 ### train
 # effective batch = per_device * grad_accum * num_gpus
-# default assumes 1 GPU (= 32); on 4 GPUs lower grad_accum to 8 to keep it ~32
+# 8-GPU default = 16; raise grad_accum only if memory headroom is sufficient
 per_device_train_batch_size: 1
-gradient_accumulation_steps: 32
+gradient_accumulation_steps: 2
 learning_rate: 8.0e-5
 num_train_epochs: 3.0
 lr_scheduler_type: cosine

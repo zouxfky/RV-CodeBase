@@ -1,0 +1,42 @@
+### model
+model_name_or_path: /home/zouxiaofeng/models/gemma-4-12B-it
+local_files_only: true
+trust_remote_code: true
+attn_implementation: sdpa
+
+### LoRA: the script restricts these names to model.language_model.layers
+lora_rank: 16
+lora_alpha: 32
+lora_dropout: 0.05
+
+### dataset
+train_file: sft/data/train.jsonl
+eval_file: sft/data/eval.jsonl
+cutoff_len: 3072
+min_response_tokens: 1024
+
+### output
+output_dir: sft/results/gemma-4-12b-it-lora
+resume_from_checkpoint: auto
+report_to:
+  - tensorboard
+
+### train: effective batch = 1 * 4 accumulation * 4 GPUs = 16
+per_device_train_batch_size: 1
+per_device_eval_batch_size: 1
+gradient_accumulation_steps: 4
+learning_rate: 1.0e-4
+num_train_epochs: 3.0
+lr_scheduler_type: cosine
+warmup_steps: 75
+weight_decay: 0.01
+max_grad_norm: 1.0
+tf32: true
+seed: 42
+
+### logging and checkpoints
+logging_steps: 10
+eval_steps: 250
+save_steps: 250
+save_total_limit: 3
+dataloader_num_workers: 4

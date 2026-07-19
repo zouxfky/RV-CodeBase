@@ -12,6 +12,7 @@
 #   MAX_MODEL_LEN            default 16384, or 131072 for Qwen3.5
 #   MAX_NUM_SEQS             default unset, or 8 for Qwen3.5
 #   MAX_BATCHED_TOKENS       default unset, or 2048 for Qwen3.5
+#   CHAT_TEMPLATE            defaults to <model_path>/chat_template.jinja when present
 #   GPU_MEMORY_UTILIZATION   default 0.85
 #   QWEN35_LANGUAGE_ONLY     default 1 for Qwen3.5, unset for others
 #   QWEN35_SPECULATIVE_CFG   default {"method":"mtp","num_speculative_tokens":3}
@@ -30,6 +31,7 @@ GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.85}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-}"
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-}"
 MAX_BATCHED_TOKENS="${MAX_BATCHED_TOKENS:-}"
+CHAT_TEMPLATE="${CHAT_TEMPLATE:-}"
 QWEN35_LANGUAGE_ONLY="${QWEN35_LANGUAGE_ONLY:-}"
 QWEN35_SPECULATIVE_CFG="${QWEN35_SPECULATIVE_CFG:-}"
 VLLM_EXTRA_ARGS="${VLLM_EXTRA_ARGS:-}"
@@ -50,6 +52,17 @@ COMMON_ARGS=(
 )
 
 MODEL_ARGS=()
+if [[ -z "${CHAT_TEMPLATE}" ]] && [[ -f "${MODEL}/chat_template.jinja" ]]; then
+    CHAT_TEMPLATE="${MODEL}/chat_template.jinja"
+fi
+if [[ -n "${CHAT_TEMPLATE}" ]]; then
+    if [[ ! -f "${CHAT_TEMPLATE}" ]]; then
+        echo "chat template not found: ${CHAT_TEMPLATE}" >&2
+        exit 1
+    fi
+    MODEL_ARGS+=(--chat-template "${CHAT_TEMPLATE}")
+fi
+
 if [[ -z "${MAX_MODEL_LEN}" ]]; then
     if [[ "${LOWER_NAME}" == *qwen3.5* ]] || [[ "${LOWER_NAME}" == *qwen3_5* ]]; then
         MAX_MODEL_LEN=131072

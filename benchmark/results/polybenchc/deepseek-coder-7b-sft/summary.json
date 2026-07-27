@@ -1,0 +1,19 @@
+{
+  "num_samples": 30,
+  "round1": {
+    "compile_pass_rate": "0.9333",
+    "correct_pass_rate": "0.5000",
+    "positive_rate": "0.4667",
+    "speedup_over_1_5_rate": "0.0000",
+    "geometric_mean_speedup": "1.0013",
+    "max_speedup": "1.0863"
+  },
+  "overall": {
+    "compile_pass_rate": "0.9333",
+    "correct_pass_rate": "0.4333",
+    "positive_rate": "1.0000",
+    "speedup_over_1_5_rate": "0.0000",
+    "geometric_mean_speedup": "1.0340",
+    "max_speedup": "1.1158"
+  }
+}

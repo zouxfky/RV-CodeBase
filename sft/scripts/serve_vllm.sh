@@ -9,7 +9,6 @@
 #   sft/scripts/serve_vllm.sh <model_path> [served_name] [port] [tp]
 #
 # Environment overrides:
-#   MAX_MODEL_LEN            default 16384, or 131072 for Qwen3.5
 #   MAX_NUM_SEQS             default unset, or 8 for Qwen3.5
 #   MAX_BATCHED_TOKENS       default unset, or 2048 for Qwen3.5
 #   CHAT_TEMPLATE            defaults to <model_path>/chat_template.jinja when present
@@ -28,7 +27,6 @@ SERVED_NAME="${2:-$(basename "${MODEL}")}"
 PORT="${3:-8000}"
 TP="${4:-1}"
 GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.85}"
-MAX_MODEL_LEN="${MAX_MODEL_LEN:-}"
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-}"
 MAX_BATCHED_TOKENS="${MAX_BATCHED_TOKENS:-}"
 CHAT_TEMPLATE="${CHAT_TEMPLATE:-}"
@@ -62,15 +60,6 @@ if [[ -n "${CHAT_TEMPLATE}" ]]; then
     fi
     MODEL_ARGS+=(--chat-template "${CHAT_TEMPLATE}")
 fi
-
-if [[ -z "${MAX_MODEL_LEN}" ]]; then
-    if [[ "${LOWER_NAME}" == *qwen3.5* ]] || [[ "${LOWER_NAME}" == *qwen3_5* ]]; then
-        MAX_MODEL_LEN=131072
-    else
-        MAX_MODEL_LEN=16384
-    fi
-fi
-MODEL_ARGS+=(--max-model-len "${MAX_MODEL_LEN}")
 
 if [[ "${LOWER_NAME}" == *qwen3.5* ]] || [[ "${LOWER_NAME}" == *qwen3_5* ]]; then
     if [[ -z "${MAX_NUM_SEQS}" ]]; then

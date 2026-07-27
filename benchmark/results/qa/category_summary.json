@@ -1,0 +1,597 @@
+{
+  "num_questions": 1000,
+  "categories": {
+    "scenario_selection": {
+      "description": "场景选型：根据 kernel、compiler、runtime 或行为线索选择指令族",
+      "num_questions": 109,
+      "fraction": 0.109
+    },
+    "verification_correction": {
+      "description": "校验纠错：检查 reviewer、claim、note 或已有说法是否正确",
+      "num_questions": 349,
+      "fraction": 0.349
+    },
+    "comparison_relation": {
+      "description": "对比关系：区分、比较、分组或解释多个指令/指令族之间的关系",
+      "num_questions": 303,
+      "fraction": 0.303
+    },
+    "direct_lookup": {
+      "description": "直接查询：围绕一个指令或指令族给出格式、语义、operand 和 intrinsic",
+      "num_questions": 239,
+      "fraction": 0.239
+    }
+  },
+  "methods": {
+    "qwen3.5-27b_no-rag": {
+      "scenario_selection": {
+        "num_questions": 97,
+        "coverage": 0.097,
+        "instruction": {
+          "accuracy": 0.1838,
+          "precision": 0.4307,
+          "f1": 0.2168,
+          "faithfulness": null
+        },
+        "operand": {
+          "accuracy": 0.0,
+          "precision": 0.0,
+          "f1": 0.0,
+          "faithfulness": null
+        },
+        "intrinsic": {
+          "accuracy": 0.1216,
+          "precision": 0.3417,
+          "f1": 0.1355,
+          "faithfulness": null
+        },
+        "overall": {
+          "accuracy": 0.1018,
+          "precision": 0.3613,
+          "f1": 0.1291,
+          "faithfulness": null
+        }
+      },
+      "verification_correction": {
+        "num_questions": 338,
+        "coverage": 0.338,
+        "instruction": {
+          "accuracy": 0.7669,
+          "precision": 0.8768,
+          "f1": 0.7962,
+          "faithfulness": null
+        },
+        "operand": {
+          "accuracy": 0.0508,
+          "precision": 0.2105,
+          "f1": 0.2123,
+          "faithfulness": null
+        },
+        "intrinsic": {
+          "accuracy": 0.5079,
+          "precision": 0.6227,
+          "f1": 0.5536,
+          "faithfulness": null
+        },
+        "overall": {
+          "accuracy": 0.4419,
+          "precision": 0.6977,
+          "f1": 0.511,
+          "faithfulness": null
+        }
+      },
+      "comparison_relation": {
+        "num_questions": 295,
+        "coverage": 0.295,
+        "instruction": {
+          "accuracy": 0.7458,
+          "precision": 0.8571,
+          "f1": 0.7768,
+          "faithfulness": null
+        },
+        "operand": {
+          "accuracy": 0.0063,
+          "precision": 0.0949,
+          "f1": 0.0441,
+          "faithfulness": null
+        },
+        "intrinsic": {
+          "accuracy": 0.551,
+          "precision": 0.7257,
+          "f1": 0.6162,
+          "faithfulness": null
+        },
+        "overall": {
+          "accuracy": 0.4343,
+          "precision": 0.7474,
+          "f1": 0.5279,
+          "faithfulness": null
+        }
+      },
+      "direct_lookup": {
+        "num_questions": 229,
+        "coverage": 0.229,
+        "instruction": {
+          "accuracy": 0.7513,
+          "precision": 0.8535,
+          "f1": 0.7818,
+          "faithfulness": null
+        },
+        "operand": {
+          "accuracy": 0.0198,
+          "precision": 0.1468,
+          "f1": 0.1061,
+          "faithfulness": null
+        },
+        "intrinsic": {
+          "accuracy": 0.5258,
+          "precision": 0.6254,
+          "f1": 0.5703,
+          "faithfulness": null
+        },
+        "overall": {
+          "accuracy": 0.4323,
+          "precision": 0.6993,
+          "f1": 0.515,
+          "faithfulness": null
+        }
+      }
+    },
+    "qwen3.5-27b_bm25-rag": {
+      "scenario_selection": {
+        "num_questions": 109,
+        "coverage": 0.109,
+        "instruction": {
+          "accuracy": 0.7587,
+          "precision": 0.9834,
+          "f1": 0.8028,
+          "faithfulness": 0.9609
+        },
+        "operand": {
+          "accuracy": 0.158,
+          "precision": 0.9525,
+          "f1": 0.4828,
+          "faithfulness": 0.9125
+        },
+        "intrinsic": {
+          "accuracy": 0.7631,
+          "precision": 0.7964,
+          "f1": 0.6734,
+          "faithfulness": 0.6218
+        },
+        "overall": {
+          "accuracy": 0.5599,
+          "precision": 0.9061,
+          "f1": 0.6494,
+          "faithfulness": 0.8202
+        }
+      },
+      "verification_correction": {
+        "num_questions": 349,
+        "coverage": 0.349,
+        "instruction": {
+          "accuracy": 0.9314,
+          "precision": 0.9869,
+          "f1": 0.9393,
+          "faithfulness": 0.9732
+        },
+        "operand": {
+          "accuracy": 0.4577,
+          "precision": 0.9331,
+          "f1": 0.8415,
+          "faithfulness": 0.9279
+        },
+        "intrinsic": {
+          "accuracy": 0.9594,
+          "precision": 0.9114,
+          "f1": 0.8887,
+          "faithfulness": 0.6276
+        },
+        "overall": {
+          "accuracy": 0.7829,
+          "precision": 0.9436,
+          "f1": 0.8353,
+          "faithfulness": 0.828
+        }
+      },
+      "comparison_relation": {
+        "num_questions": 303,
+        "coverage": 0.303,
+        "instruction": {
+          "accuracy": 0.9024,
+          "precision": 0.9847,
+          "f1": 0.9203,
+          "faithfulness": 0.9096
+        },
+        "operand": {
+          "accuracy": 0.1418,
+          "precision": 0.7663,
+          "f1": 0.4192,
+          "faithfulness": 0.7297
+        },
+        "intrinsic": {
+          "accuracy": 0.8677,
+          "precision": 0.8243,
+          "f1": 0.785,
+          "faithfulness": 0.6396
+        },
+        "overall": {
+          "accuracy": 0.6373,
+          "precision": 0.8859,
+          "f1": 0.717,
+          "faithfulness": 0.7671
+        }
+      },
+      "direct_lookup": {
+        "num_questions": 239,
+        "coverage": 0.239,
+        "instruction": {
+          "accuracy": 0.8925,
+          "precision": 0.9936,
+          "f1": 0.9208,
+          "faithfulness": 0.9616
+        },
+        "operand": {
+          "accuracy": 0.3045,
+          "precision": 0.9327,
+          "f1": 0.6771,
+          "faithfulness": 0.8868
+        },
+        "intrinsic": {
+          "accuracy": 0.8996,
+          "precision": 0.821,
+          "f1": 0.8157,
+          "faithfulness": 0.7122
+        },
+        "overall": {
+          "accuracy": 0.6989,
+          "precision": 0.9139,
+          "f1": 0.7711,
+          "faithfulness": 0.8495
+        }
+      }
+    },
+    "qwen3.5-27b_text-rag": {
+      "scenario_selection": {
+        "num_questions": 109,
+        "coverage": 0.109,
+        "instruction": {
+          "accuracy": 0.5671,
+          "precision": 0.9344,
+          "f1": 0.6133,
+          "faithfulness": 0.8816
+        },
+        "operand": {
+          "accuracy": 0.1366,
+          "precision": 0.8288,
+          "f1": 0.383,
+          "faithfulness": 0.7439
+        },
+        "intrinsic": {
+          "accuracy": 0.6165,
+          "precision": 0.7655,
+          "f1": 0.5444,
+          "faithfulness": 0.6906
+        },
+        "overall": {
+          "accuracy": 0.4401,
+          "precision": 0.8361,
+          "f1": 0.5089,
+          "faithfulness": 0.7732
+        }
+      },
+      "verification_correction": {
+        "num_questions": 349,
+        "coverage": 0.349,
+        "instruction": {
+          "accuracy": 0.9367,
+          "precision": 0.9771,
+          "f1": 0.9363,
+          "faithfulness": 0.9551
+        },
+        "operand": {
+          "accuracy": 0.4558,
+          "precision": 0.9402,
+          "f1": 0.8716,
+          "faithfulness": 0.9303
+        },
+        "intrinsic": {
+          "accuracy": 0.9661,
+          "precision": 0.885,
+          "f1": 0.8832,
+          "faithfulness": 0.8096
+        },
+        "overall": {
+          "accuracy": 0.7862,
+          "precision": 0.9308,
+          "f1": 0.8351,
+          "faithfulness": 0.8913
+        }
+      },
+      "comparison_relation": {
+        "num_questions": 303,
+        "coverage": 0.303,
+        "instruction": {
+          "accuracy": 0.8818,
+          "precision": 0.9723,
+          "f1": 0.8982,
+          "faithfulness": 0.9418
+        },
+        "operand": {
+          "accuracy": 0.2202,
+          "precision": 0.8753,
+          "f1": 0.5482,
+          "faithfulness": 0.8729
+        },
+        "intrinsic": {
+          "accuracy": 0.8515,
+          "precision": 0.8224,
+          "f1": 0.7797,
+          "faithfulness": 0.7579
+        },
+        "overall": {
+          "accuracy": 0.6512,
+          "precision": 0.8912,
+          "f1": 0.7248,
+          "faithfulness": 0.8469
+        }
+      },
+      "direct_lookup": {
+        "num_questions": 239,
+        "coverage": 0.239,
+        "instruction": {
+          "accuracy": 0.8903,
+          "precision": 0.9938,
+          "f1": 0.9109,
+          "faithfulness": 0.9668
+        },
+        "operand": {
+          "accuracy": 0.365,
+          "precision": 0.8968,
+          "f1": 0.6585,
+          "faithfulness": 0.8646
+        },
+        "intrinsic": {
+          "accuracy": 0.8989,
+          "precision": 0.7992,
+          "f1": 0.7883,
+          "faithfulness": 0.7851
+        },
+        "overall": {
+          "accuracy": 0.7181,
+          "precision": 0.8975,
+          "f1": 0.7714,
+          "faithfulness": 0.8751
+        }
+      }
+    },
+    "qwen3.5-27b_graph-rag": {
+      "scenario_selection": {
+        "num_questions": 109,
+        "coverage": 0.109,
+        "instruction": {
+          "accuracy": 0.5626,
+          "precision": 0.9115,
+          "f1": 0.5972,
+          "faithfulness": 0.8631
+        },
+        "operand": {
+          "accuracy": 0.144,
+          "precision": 0.8862,
+          "f1": 0.3926,
+          "faithfulness": 0.7999
+        },
+        "intrinsic": {
+          "accuracy": 0.6012,
+          "precision": 0.7464,
+          "f1": 0.5288,
+          "faithfulness": 0.6949
+        },
+        "overall": {
+          "accuracy": 0.4359,
+          "precision": 0.8307,
+          "f1": 0.4967,
+          "faithfulness": 0.7662
+        }
+      },
+      "verification_correction": {
+        "num_questions": 349,
+        "coverage": 0.349,
+        "instruction": {
+          "accuracy": 0.9409,
+          "precision": 0.9753,
+          "f1": 0.939,
+          "faithfulness": 0.9519
+        },
+        "operand": {
+          "accuracy": 0.4653,
+          "precision": 0.9563,
+          "f1": 0.8769,
+          "faithfulness": 0.9376
+        },
+        "intrinsic": {
+          "accuracy": 0.9709,
+          "precision": 0.8861,
+          "f1": 0.8864,
+          "faithfulness": 0.8151
+        },
+        "overall": {
+          "accuracy": 0.7924,
+          "precision": 0.9338,
+          "f1": 0.8401,
+          "faithfulness": 0.8923
+        }
+      },
+      "comparison_relation": {
+        "num_questions": 303,
+        "coverage": 0.303,
+        "instruction": {
+          "accuracy": 0.8822,
+          "precision": 0.9703,
+          "f1": 0.897,
+          "faithfulness": 0.9396
+        },
+        "operand": {
+          "accuracy": 0.2197,
+          "precision": 0.8814,
+          "f1": 0.5536,
+          "faithfulness": 0.8673
+        },
+        "intrinsic": {
+          "accuracy": 0.8535,
+          "precision": 0.8337,
+          "f1": 0.7956,
+          "faithfulness": 0.7666
+        },
+        "overall": {
+          "accuracy": 0.6518,
+          "precision": 0.8943,
+          "f1": 0.7276,
+          "faithfulness": 0.8457
+        }
+      },
+      "direct_lookup": {
+        "num_questions": 239,
+        "coverage": 0.239,
+        "instruction": {
+          "accuracy": 0.9026,
+          "precision": 0.992,
+          "f1": 0.9206,
+          "faithfulness": 0.9687
+        },
+        "operand": {
+          "accuracy": 0.362,
+          "precision": 0.9359,
+          "f1": 0.6689,
+          "faithfulness": 0.885
+        },
+        "intrinsic": {
+          "accuracy": 0.9115,
+          "precision": 0.8066,
+          "f1": 0.7947,
+          "faithfulness": 0.7666
+        },
+        "overall": {
+          "accuracy": 0.7254,
+          "precision": 0.908,
+          "f1": 0.7798,
+          "faithfulness": 0.8709
+        }
+      }
+    },
+    "qwen3.5-27b_hybrid-rag": {
+      "scenario_selection": {
+        "num_questions": 109,
+        "coverage": 0.109,
+        "instruction": {
+          "accuracy": 0.8382,
+          "precision": 0.9937,
+          "f1": 0.8742,
+          "faithfulness": 0.9937
+        },
+        "operand": {
+          "accuracy": 0.1881,
+          "precision": 0.9307,
+          "f1": 0.483,
+          "faithfulness": 0.9224
+        },
+        "intrinsic": {
+          "accuracy": 0.8664,
+          "precision": 0.8113,
+          "f1": 0.7453,
+          "faithfulness": 0.6339
+        },
+        "overall": {
+          "accuracy": 0.6309,
+          "precision": 0.9091,
+          "f1": 0.7226,
+          "faithfulness": 0.8385
+        }
+      },
+      "verification_correction": {
+        "num_questions": 349,
+        "coverage": 0.349,
+        "instruction": {
+          "accuracy": 0.9316,
+          "precision": 0.991,
+          "f1": 0.9407,
+          "faithfulness": 0.9833
+        },
+        "operand": {
+          "accuracy": 0.4636,
+          "precision": 0.9242,
+          "f1": 0.8262,
+          "faithfulness": 0.9167
+        },
+        "intrinsic": {
+          "accuracy": 0.969,
+          "precision": 0.9119,
+          "f1": 0.8966,
+          "faithfulness": 0.6514
+        },
+        "overall": {
+          "accuracy": 0.7881,
+          "precision": 0.944,
+          "f1": 0.841,
+          "faithfulness": 0.841
+        }
+      },
+      "comparison_relation": {
+        "num_questions": 303,
+        "coverage": 0.303,
+        "instruction": {
+          "accuracy": 0.9233,
+          "precision": 0.9892,
+          "f1": 0.9371,
+          "faithfulness": 0.9023
+        },
+        "operand": {
+          "accuracy": 0.17,
+          "precision": 0.7767,
+          "f1": 0.4439,
+          "faithfulness": 0.7514
+        },
+        "intrinsic": {
+          "accuracy": 0.8667,
+          "precision": 0.8405,
+          "f1": 0.7896,
+          "faithfulness": 0.6112
+        },
+        "overall": {
+          "accuracy": 0.6533,
+          "precision": 0.894,
+          "f1": 0.7337,
+          "faithfulness": 0.7555
+        }
+      },
+      "direct_lookup": {
+        "num_questions": 239,
+        "coverage": 0.239,
+        "instruction": {
+          "accuracy": 0.9045,
+          "precision": 0.993,
+          "f1": 0.9337,
+          "faithfulness": 0.9718
+        },
+        "operand": {
+          "accuracy": 0.3198,
+          "precision": 0.9239,
+          "f1": 0.6576,
+          "faithfulness": 0.9
+        },
+        "intrinsic": {
+          "accuracy": 0.9277,
+          "precision": 0.8116,
+          "f1": 0.8146,
+          "faithfulness": 0.7253
+        },
+        "overall": {
+          "accuracy": 0.7174,
+          "precision": 0.9099,
+          "f1": 0.7808,
+          "faithfulness": 0.8602
+        }
+      }
+    }
+  }
+}

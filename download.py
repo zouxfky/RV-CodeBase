@@ -31,7 +31,12 @@ DATASET_REPO = "RV-CodeBase/dataset"
 MODEL_REPOS = {
     "qwen3.5-9b-sft": "RV-CodeBase/qwen3.5-9b-sft",
     "qwen3.5-27b-sft": "RV-CodeBase/qwen3.5-27b-sft",
-    "llama3.1-8b-sft": "RV-CodeBase/llama3.1-8b-sft",
+    "gemma4-12b-sft": "RV-CodeBase/gemma4-12b-sft",
+    "gemma4-31b-sft": "RV-CodeBase/gemma4-31b-sft",
+    "deepseek-coder-7b-sft": "RV-CodeBase/deepseek-coder-7b-sft",
+    "deepseek-coder-33b-sft": "RV-CodeBase/deepseek-coder-33b-sft",
+    "codellama-13b-sft": "RV-CodeBase/codellama-13b-sft",
+    "codellama-34b-sft": "RV-CodeBase/codellama-34b-sft",
 }
 
 # subset -> (repo_id, repo_type, remote_prefix, local_target)
@@ -49,9 +54,29 @@ SUBSETS = {
         MODEL_REPOS["qwen3.5-27b-sft"], "model", "",
         REPO_DIR / "sft" / "results" / "qwen3.5-27b-merged",
     ),
-    "model-llama3.1-8b-sft": (
-        MODEL_REPOS["llama3.1-8b-sft"], "model", "",
-        REPO_DIR / "sft" / "results" / "llama3.1-8b-merged",
+    "model-gemma4-12b-sft": (
+        MODEL_REPOS["gemma4-12b-sft"], "model", "",
+        REPO_DIR / "sft" / "results" / "gemma-4-12b-it-merged",
+    ),
+    "model-gemma4-31b-sft": (
+        MODEL_REPOS["gemma4-31b-sft"], "model", "",
+        REPO_DIR / "sft" / "results" / "gemma-4-31b-it-merged",
+    ),
+    "model-deepseek-coder-7b-sft": (
+        MODEL_REPOS["deepseek-coder-7b-sft"], "model", "",
+        REPO_DIR / "sft" / "results" / "deepseek-coder-7b-instruct-v1.5-merged",
+    ),
+    "model-deepseek-coder-33b-sft": (
+        MODEL_REPOS["deepseek-coder-33b-sft"], "model", "",
+        REPO_DIR / "sft" / "results" / "deepseek-coder-33b-instruct-merged",
+    ),
+    "model-codellama-13b-sft": (
+        MODEL_REPOS["codellama-13b-sft"], "model", "",
+        REPO_DIR / "sft" / "results" / "codellama-13b-instruct-merged",
+    ),
+    "model-codellama-34b-sft": (
+        MODEL_REPOS["codellama-34b-sft"], "model", "",
+        REPO_DIR / "sft" / "results" / "codellama-34b-instruct-merged",
     ),
 }
 
@@ -59,7 +84,12 @@ GROUPS = {
     "models": [
         "model-qwen3.5-9b-sft",
         "model-qwen3.5-27b-sft",
-        "model-llama3.1-8b-sft",
+        "model-gemma4-12b-sft",
+        "model-gemma4-31b-sft",
+        "model-deepseek-coder-7b-sft",
+        "model-deepseek-coder-33b-sft",
+        "model-codellama-13b-sft",
+        "model-codellama-34b-sft",
     ],
 }
 

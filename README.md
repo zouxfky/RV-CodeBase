@@ -1,17 +1,16 @@
 # 🌾 RV-CodeBase: A Comprehensive Dataset for LLM-based Code Optimization on RISC-V
 
-RV-CodeBase is, to the best of our knowledge, the first systematic dataset for code optimization on RISC-V. It addresses the gap between functional correctness and hardware-specific optimization in existing code corpora, and provides resources for LLMs to acquire RISC-V-specific capabilities. RV-CodeBase consists of two core components:
+RV-CodeBase is, to the best of our knowledge, the first systematic dataset for code optimization on RISC-V. It addresses the gap between functional correctness and hardware-specific optimization in existing code corpora and provides resources for LLMs to acquire RISC-V-specific capabilities. RV-CodeBase consists of two core components:
 
-1. An **RVV instruction knowledge base** with fine-grained specifications, intrinsic mappings, and usage examples for the RISC-V vector extension (RVV).
-2. A collection of **code optimization pairs**, where each baseline program is paired with a RISC-V-optimized version produced under the guidance of the RVV knowledge base and verified on hardware.
+1. A **RISC-V instruction knowledge base** with fine-grained specifications, intrinsic mappings, and usage examples for RISC-V extensions, including RVV, Zbb, Zbc, and Zicond.
+2. A collection of **code optimization pairs**, where each baseline program is paired with a RISC-V-optimized version produced under the guidance of the instruction knowledge base and verified on hardware.
 
-Built on top of these, RV-CodeBase also defines two downstream benchmark tasks: (1) RAG-based RVV instruction question answering, and (2) supervised fine-tuning for optimization-oriented code generation.
+Built on top of these, RV-CodeBase also supports two downstream tasks: (1) RAG-based RISC-V instruction question answering and (2) optimization-oriented code generation and evaluation.
 
 - 🤗 HF Dataset: [RV-CodeBase/dataset](https://huggingface.co/datasets/RV-CodeBase/dataset)
 - 🤗 HF Models:
   [qwen3.5-9b-sft](https://huggingface.co/RV-CodeBase/qwen3.5-9b-sft),
-  [qwen3.5-27b-sft](https://huggingface.co/RV-CodeBase/qwen3.5-27b-sft),
-  [llama3.1-8b-sft](https://huggingface.co/RV-CodeBase/llama3.1-8b-sft)
+  [qwen3.5-27b-sft](https://huggingface.co/RV-CodeBase/qwen3.5-27b-sft)
 
 ## Overview
 
@@ -19,15 +18,15 @@ Built on top of these, RV-CodeBase also defines two downstream benchmark tasks: 
 
 ## Features
 
-- **First-of-its-kind RISC-V optimization dataset:** focuses on hardware-specific optimization rather than only functional correctness, targeting the open-source RISC-V ISA and its modular extensions (RVV in particular).
-- **RVV instruction knowledge base:** structured from official RISC-V specifications into entries that capture functional semantics, instruction formats, intrinsic interfaces, and usage examples.
-- **Optimization pair collection:** seed programs are gathered from multiple sources (benchmarks, open-source datasets, and projects), scaled with adjustable workload factors, and rewritten by LLMs guided by the RVV knowledge base.
+- **First-of-its-kind RISC-V optimization dataset:** focuses on hardware-specific optimization rather than only functional correctness, targeting the open-source RISC-V ISA and its modular extensions.
+- **RISC-V instruction knowledge base:** structured from official RISC-V specifications into entries that capture functional semantics, instruction formats, intrinsic interfaces, and usage examples.
+- **Optimization pair collection:** seed programs are gathered from multiple sources (benchmarks, open-source datasets, and projects), scaled with adjustable workload factors, and rewritten by LLMs guided by the RISC-V knowledge base.
 - **Hardware-verified pipeline:** specification modeling, program collection and scaling, LLM-based optimization, and hardware verification are integrated into a single data generation pipeline.
-- **Two downstream benchmarks:** RAG over the RVV knowledge base for instruction QA, and SFT data construction for code optimization, both with reproducible evaluation scaffolding.
+- **Two downstream tasks:** RAG over the RISC-V knowledge base for instruction QA, and optimization-oriented code generation with reproducible evaluation scaffolding.
 
 ## Installation
 
-RV-CodeBase uses a two-machine setup: a **host machine** runs the Python pipeline (data collection, LLM-based optimization, prompt orchestration), and a **RISC-V machine with RVV support** runs the build and verification of the generated programs.
+RV-CodeBase uses a two-machine setup: a **host machine** runs the Python pipeline (data collection, LLM-based optimization, and prompt orchestration), and a **64-bit RISC-V machine with RVV support** builds, executes, and verifies the generated programs.
 
 **1. Host machine: Python environment**
 
@@ -39,7 +38,7 @@ pip install -r requirements.txt
 
 **2. RISC-V machine: build and verification**
 
-Prepare a RISC-V machine with RVV support and a working C/C++ toolchain. The build and verification scripts default to `g++`.
+Prepare a 64-bit RISC-V machine with RVV support and a working C/C++ toolchain. The benchmark scripts compile with `-march=rv64gcv -mabi=lp64d` by default.
 
 ```bash
 # Debian / Ubuntu
@@ -53,10 +52,10 @@ After the host machine produces the dataset artifacts, sync them to the RISC-V m
 
 ## Download
 
-Download RV-CodeBase artifacts from Hugging Face:
+Download the RV-CodeBase dataset artifacts from Hugging Face:
 
 ```bash
-python download.py
+python download.py --subset benchmark rag sft pipeline
 ```
 
 ## Generate RV-CodeBase
@@ -74,19 +73,25 @@ model        = <model name>
 temperature  = 0
 ```
 
-### RAG-based RVV Instruction QA
+### RAG-based RISC-V Instruction QA
 
-Run any of the three QA settings against `benchmark/datasets/questions.jsonl`. Each runner writes `predictions.jsonl` under `benchmark/results/qa/<method>/`:
+Run any of the five QA settings against `benchmark/data/questions.jsonl`. Each runner writes `predictions.jsonl` under `benchmark/results/qa/<method>/`:
 
 ```bash
 # No-RAG: model-only baseline
-python3 benchmark/methods/qa/no_rag/run.py     --method <method> --jobs 8
+python3 benchmark/methods/qa/no_rag/run.py     --method no-rag --jobs 8
 
-# TextRAG: embedding retrieval over the RVV knowledge base
-python3 benchmark/methods/qa/text_rag/run.py   --method <method> --jobs 8 --top-k 3
+# DenseRAG (TextRAG): embedding retrieval over the RISC-V knowledge base
+python3 benchmark/methods/qa/text_rag/run.py   --method text-rag --jobs 8 --top-k 3
 
-# GraphRAG: knowledge graph retrieval over the RVV knowledge base
-python3 benchmark/methods/qa/graph_rag/run.py  --method <method> --jobs 8 --top-k 5
+# BM25: sparse lexical retrieval over the same DenseRAG chunks
+python3 benchmark/methods/qa/bm25/run.py       --method bm25-rag --jobs 8 --top-k 3
+
+# HybridRAG: reciprocal-rank fusion of BM25 and embedding retrieval
+python3 benchmark/methods/qa/hybrid_rag/run.py --method hybrid-rag --jobs 8 --top-k 3 --candidate-k 10
+
+# GraphRAG: knowledge graph retrieval over the RISC-V knowledge base
+python3 benchmark/methods/qa/graph_rag/run.py  --method graph-rag --jobs 8 --top-k 5
 ```
 
 Score predictions and aggregate:
@@ -94,6 +99,10 @@ Score predictions and aggregate:
 ```bash
 python3 benchmark/eval/qa/eval_qa.py       --method <method>   # writes metrics.jsonl
 python3 benchmark/eval/qa/aggregate_qa.py  --method <method>   # writes summary.json
+
+# Classify questions and compare each QA method by question category
+python3 benchmark/eval/qa/analyze_categories.py \
+    --methods <method1>,<method2>,<method3>
 ```
 
 ### Code Optimization on TSVC, PolyBench/C, RAJAPerf
@@ -109,6 +118,9 @@ python3 benchmark/methods/rajaperf/run.py    --output benchmark/results/rajaperf
 Score per-run and build the cross-model summary table:
 
 ```bash
-python3 benchmark/eval/perf/summary.py             --input benchmark/results/<bench>/<model>/results.jsonl
-python3 benchmark/eval/perf/build_summary_table.py     # writes benchmark/results/summary_table.xlsx
+python3 benchmark/eval/perf/summary.py \
+    --input benchmark/results/<bench>/<model>/results.jsonl
+python3 benchmark/eval/perf/export_xlsx.py \
+    --results-root benchmark/results \
+    --output benchmark/results/summary_table.xlsx
 ```

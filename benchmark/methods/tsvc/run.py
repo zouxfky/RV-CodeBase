@@ -86,6 +86,92 @@ def extract_tagged_code(text: str) -> str:
     return match.group(1).strip()
 
 
+INCLUDE_PATTERN = re.compile(r"(?m)^\s*#\s*include\s*([<\"][^>\"]+[>\"])\s*$")
+
+
+def extract_headers(code: str) -> str:
+    headers: list[str] = []
+    seen: set[str] = set()
+    for match in INCLUDE_PATTERN.finditer(code):
+        header = match.group(1)
+        if header in seen:
+            continue
+        seen.add(header)
+        if header == "<riscv_vector.h>":
+            headers.append(
+                "#if defined(__riscv_vector)\n"
+                "#include <riscv_vector.h>\n"
+                "#endif"
+            )
+        else:
+            headers.append(f"#include {header}")
+    return "\n".join(headers)
+
+
+def find_matching_brace(code: str, opening: int) -> int:
+    depth = 0
+    state = "normal"
+    escaped = False
+    i = opening
+    while i < len(code):
+        char = code[i]
+        next_char = code[i + 1] if i + 1 < len(code) else ""
+        if state == "normal":
+            if char == "/" and next_char == "/":
+                state = "line_comment"
+                i += 2
+                continue
+            if char == "/" and next_char == "*":
+                state = "block_comment"
+                i += 2
+                continue
+            if char == '"':
+                state = "string"
+            elif char == "'":
+                state = "char"
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return i
+        elif state == "line_comment":
+            if char == "\n":
+                state = "normal"
+        elif state == "block_comment":
+            if char == "*" and next_char == "/":
+                state = "normal"
+                i += 2
+                continue
+        else:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif (state == "string" and char == '"') or (
+                state == "char" and char == "'"
+            ):
+                state = "normal"
+        i += 1
+    raise ValueError("unterminated target function body")
+
+
+def extract_target_function(code: str, target_name: str) -> str:
+    for match in FUNCTION_NAME_PATTERN.finditer(code):
+        if match.group(1) != target_name:
+            continue
+        opening = match.end() - 1
+        closing = find_matching_brace(code, opening)
+        return code[match.start() : closing + 1].strip()
+    raise ValueError(f"missing_target_function:{target_name}")
+
+
+def normalize_candidate_code(code: str, target_name: str) -> str:
+    headers = extract_headers(code)
+    function = extract_target_function(code, target_name)
+    return "\n\n".join(part for part in (headers, function) if part)
+
+
 def primary_function_name(code: str) -> str:
     match = FUNCTION_NAME_PATTERN.search(code)
     if not match:
@@ -229,9 +315,11 @@ def call_tsvc_llm(
         phase=phase,
         attempt=attempt,
     )
-    updated_messages = request_messages + [{"role": "assistant", "content": text}]
-    code = extract_tagged_code(text)
     target_name = primary_function_name(str(row["code"]))
+    code = normalize_candidate_code(extract_tagged_code(text), target_name)
+    updated_messages = request_messages + [
+        {"role": "assistant", "content": f"<code>{code}</code>"}
+    ]
     errors = validate_candidate_code(target_name=target_name, code=code)
     if errors:
         raise ValueError(

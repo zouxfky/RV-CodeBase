@@ -7,10 +7,6 @@ RV-CodeBase is, to the best of our knowledge, the first systematic dataset for c
 
 Built on top of these, RV-CodeBase also supports two downstream tasks: (1) RAG-based RISC-V instruction question answering and (2) optimization-oriented code generation and evaluation.
 
-- 🤗 HF Dataset: [RV-CodeBase/dataset](https://huggingface.co/datasets/RV-CodeBase/dataset)
-- 🤗 HF Models:
-  [qwen3.5-9b-sft](https://huggingface.co/RV-CodeBase/qwen3.5-9b-sft),
-  [qwen3.5-27b-sft](https://huggingface.co/RV-CodeBase/qwen3.5-27b-sft)
 
 ## Overview
 

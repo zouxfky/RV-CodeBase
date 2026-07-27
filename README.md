@@ -7,6 +7,16 @@ RV-CodeBase is, to the best of our knowledge, the first systematic dataset for c
 
 Built on top of these, RV-CodeBase also supports two downstream tasks: (1) RAG-based RISC-V instruction question answering and (2) optimization-oriented code generation and evaluation.
 
+- 🤗 HF Dataset: [RV-CodeBase/dataset](https://huggingface.co/datasets/RV-CodeBase/dataset)
+- 🤗 HF Models:
+  [Qwen3.5-9B-SFT](https://huggingface.co/RV-CodeBase/qwen3.5-9b-sft),
+  [Qwen3.5-27B-SFT](https://huggingface.co/RV-CodeBase/qwen3.5-27b-sft),
+  [Gemma4-12B-SFT](https://huggingface.co/RV-CodeBase/gemma4-12b-sft),
+  [Gemma4-31B-SFT](https://huggingface.co/RV-CodeBase/gemma4-31b-sft),
+  [DeepSeek-Coder-7B-SFT](https://huggingface.co/RV-CodeBase/deepseek-coder-7b-sft),
+  [DeepSeek-Coder-33B-SFT](https://huggingface.co/RV-CodeBase/deepseek-coder-33b-sft),
+  [CodeLlama-13B-SFT](https://huggingface.co/RV-CodeBase/codellama-13b-sft),
+  [CodeLlama-34B-SFT](https://huggingface.co/RV-CodeBase/codellama-34b-sft)
 
 ## Overview
 
@@ -48,10 +58,14 @@ After the host machine produces the dataset artifacts, sync them to the RISC-V m
 
 ## Download
 
-Download the RV-CodeBase dataset artifacts from Hugging Face:
+Download the RV-CodeBase dataset artifacts and fine-tuned models from Hugging Face:
 
 ```bash
+# Dataset
 python download.py --subset benchmark rag sft pipeline
+
+# Fine-tuned models
+python download.py --subset models
 ```
 
 ## Generate RV-CodeBase

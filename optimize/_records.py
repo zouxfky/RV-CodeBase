@@ -5,6 +5,8 @@ import random
 import threading
 from pathlib import Path
 
+import _extensions
+
 
 JSONL_LOCKS: dict[Path, threading.Lock] = {}
 JSONL_LOCKS_GUARD = threading.Lock()
@@ -173,9 +175,11 @@ def build_optimize_context_from_rows(
     except Exception as exc:
         raise ValueError(f"invalid global_sf_n for pid={pid}") from exc
     global_sf_n = max(1, global_sf_n // 5)
+    extension = _extensions.check_extension(seed_row.get("extension", ""))
 
     return {
         "pid": pid,
+        "extension": extension,
         "baseline_code": baseline_code,
         "output_row": output_row,
         "main_program": main_program,
@@ -198,9 +202,11 @@ def build_result_row(
     code: str,
     message: str,
     history: list[dict],
+    extension: str = "",
 ) -> dict:
     return {
         "pid": pid,
+        "extension": extension,
         "status": status,
         "stage": stage,
         "round": round,

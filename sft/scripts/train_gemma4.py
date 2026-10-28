@@ -165,7 +165,7 @@ def main() -> None:
 
     processor = AutoProcessor.from_pretrained(
         model_path,
-        local_files_only=bool(config.get("local_files_only", True)),
+        local_files_only=bool(config.get("local_files_only", False)),
         trust_remote_code=bool(config.get("trust_remote_code", True)),
     )
     tokenizer = processor.tokenizer
@@ -176,7 +176,7 @@ def main() -> None:
         dtype=torch.bfloat16,
         attn_implementation=config.get("attn_implementation", "sdpa"),
         low_cpu_mem_usage=True,
-        local_files_only=bool(config.get("local_files_only", True)),
+        local_files_only=bool(config.get("local_files_only", False)),
         trust_remote_code=bool(config.get("trust_remote_code", True)),
     )
     model.config.use_cache = False

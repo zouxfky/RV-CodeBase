@@ -1,6 +1,5 @@
 ### model
-model_name_or_path: /home/zouxiaofeng/models/gemma-4-12B-it
-local_files_only: true
+model_name_or_path: google/gemma-4-12B-it
 trust_remote_code: true
 attn_implementation: sdpa
 

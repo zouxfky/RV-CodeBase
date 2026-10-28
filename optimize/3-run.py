@@ -20,6 +20,7 @@ TMP_DIR = ROOT_DIR / "tmp"
 if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
 
+import _extensions
 import _records
 import _session
 
@@ -57,7 +58,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--session-dir", default=str(DEFAULT_SESSION_DIR))
     parser.add_argument(
         "--compile-cmd",
-        default="g++ -std=c++17 -O3 -march=rv64gcv -mabi=lp64d",
+        default="g++ -std=c++17 -O3 -march={march} -mabi=lp64d",
+        help="{march} is replaced by the target -march of each program's extension",
     )
     parser.add_argument("--compile-timeout", type=int, default=120)
     parser.add_argument("--run-timeout", type=int, default=180)
@@ -185,6 +187,7 @@ def llm_attempt(*, state: OptimizeState, args: argparse.Namespace, attempt: int)
         return GENERATE_API.repair_candidate(
             config_path=Path(args.config),
             pid=state.pid,
+            extension=state.context["extension"],
             debug_result=state.last_debug,
             messages=state.messages,
             attempt=attempt,
@@ -192,6 +195,7 @@ def llm_attempt(*, state: OptimizeState, args: argparse.Namespace, attempt: int)
     return GENERATE_API.improve_candidate(
         config_path=Path(args.config),
         pid=state.pid,
+        extension=state.context["extension"],
         debug_result=state.last_debug or {},
         messages=state.messages,
         attempt=attempt,
@@ -200,10 +204,10 @@ def llm_attempt(*, state: OptimizeState, args: argparse.Namespace, attempt: int)
 
 def llm_step_name(*, state: OptimizeState, attempt: int) -> str:
     if attempt == 1:
-        return "LLM生成"
+        return "generate"
     if state.last_debug is not None and str(state.last_debug.get("status", "")) != "pass":
-        return "LLM修复"
-    return "LLM提升"
+        return "repair"
+    return "improve"
 
 
 def normalize_stage(stage: str) -> str:
@@ -287,7 +291,16 @@ def write_state_session(*, state: OptimizeState, args: argparse.Namespace) -> No
     )
 
 
+def last_generated_code(state: OptimizeState) -> str:
+    for candidate in reversed(state.previous_candidates):
+        code = str(candidate.get("code", ""))
+        if code.strip():
+            return code
+    return state.current_code
+
+
 def build_final_row(state: OptimizeState) -> dict:
+    extension = str(state.context.get("extension", ""))
     history = [
         dict(candidate.get("summary", {}))
         for candidate in state.previous_candidates
@@ -315,6 +328,7 @@ def build_final_row(state: OptimizeState) -> dict:
             code=state.best_candidate["code"],
             message=message,
             history=history,
+            extension=extension,
         )
 
     debug = sanitize_debug(state.last_debug or {})
@@ -337,6 +351,7 @@ def build_final_row(state: OptimizeState) -> dict:
                 else "correctness passed, but no speedup > 1.0"
             ),
             history=history,
+            extension=extension,
         )
     stage = normalize_stage(str(debug.get("stage", "performance")))
     message = sanitize_message(stage=stage, message=str(debug.get("message", "no correctness-passing candidate found")))
@@ -350,9 +365,10 @@ def build_final_row(state: OptimizeState) -> dict:
         baseline=0.0,
         optimized=0.0,
         sf=int(state.context.get("global_sf_n") or 0),
-        code="",
+        code=last_generated_code(state),
         message=message,
         history=history,
+        extension=extension,
     )
 
 
@@ -369,7 +385,7 @@ def debug_attempt(*, state: OptimizeState, args: argparse.Namespace, attempt: in
         optimized_code=state.current_code,
         attempt=attempt,
         tmp_dir=Path(args.tmp_dir),
-        compile_cmd=args.compile_cmd,
+        compile_cmd=_extensions.compile_cmd_for(args.compile_cmd, state.context["extension"]),
         compile_timeout=args.compile_timeout,
         run_timeout=args.run_timeout,
         wall_timeout=args.wall_timeout,
@@ -384,7 +400,7 @@ def main() -> int:
     run_j = max(1, int(args.run_j))
 
     print(
-        "优化流程启动 "
+        "optimize start "
         f"seed={args.seed} result_output={args.result_output} "
         f"max_rounds={args.max_rounds} llm_j={llm_j} run_j={run_j}",
         flush=True,
@@ -393,7 +409,7 @@ def main() -> int:
     Path(args.tmp_dir).mkdir(parents=True, exist_ok=True)
     Path(args.session_dir).mkdir(parents=True, exist_ok=True)
 
-    print("加载待优化 pid ...", flush=True)
+    print("loading pending pids ...", flush=True)
     pending = list(
         _records.iter_pending_pids(
             seed_path=Path(args.seed),
@@ -402,17 +418,17 @@ def main() -> int:
             randomize=bool(args.random),
         )
     )
-    print(f"待优化 pid 数量: {len(pending)}", flush=True)
+    print(f"pending pids: {len(pending)}", flush=True)
     if not pending:
-        print("没有待优化 pid，退出。", flush=True)
+        print("no pending pids, exit.", flush=True)
         return 0
 
-    print("加载优化上下文索引 seed/output/testcase ...", flush=True)
+    print("loading seed/output/testcase indexes ...", flush=True)
     seed_rows = _records.load_pid_map(Path(args.seed))
     output_rows = _records.load_pid_map(Path(args.verify_output))
     testcase_rows = _records.load_pid_map(Path(args.testcase))
     print(
-        "优化上下文索引加载完成 "
+        "indexes loaded "
         f"seed={len(seed_rows)} output={len(output_rows)} testcase={len(testcase_rows)}",
         flush=True,
     )
@@ -476,6 +492,7 @@ def main() -> int:
                 code="",
                 message=str(exc),
                 history=[],
+                extension=str((seed_rows.get(pid) or {}).get("extension", "")),
             )
             finish_row(row)
             return True
@@ -505,7 +522,7 @@ def main() -> int:
                 while len(debug_futures) < run_j and debug_queue:
                     _, _, _, state = heapq.heappop(debug_queue)
                     attempt = state.rounds_done
-                    logger.start(state.pid, attempt=attempt, step="校验")
+                    logger.start(state.pid, attempt=attempt, step="verify")
                     future = debug_executor.submit(debug_attempt, state=state, args=args, attempt=attempt)
                     debug_futures[future] = (state, attempt)
 
@@ -562,7 +579,7 @@ def main() -> int:
                             finish_row(build_final_row(state))
                     else:
                         state, attempt = debug_futures.pop(future)
-                        step = "校验"
+                        step = "verify"
                         try:
                             state.last_debug = future.result()
                         except Exception as exc:

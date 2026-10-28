@@ -1,12 +1,11 @@
-You are doing top-level category classification for a code dataset.
+You are doing top-level category classification for a code dataset used for RISC-V extension-guided optimization.
 
-Your task is to classify the sample into exactly one of these five categories:
+Your task is to classify the sample into exactly one of these four categories, according to its primary computational characteristics:
 
-- Machine Learning
-- Data Structures
 - Numerical Computation
-- Algorithms
-- Others
+- Bit-level Computation
+- Control-intensive Computation
+- Machine Learning
 
 Reference rules and example subcategories:
 
@@ -19,24 +18,22 @@ How to decide:
   - `tags`
   - `solution`
 - Use `{classification_rule}` as the classification reference.
-- Focus on the primary nature of the sample.
-- Strongly prefer the first four categories.
-- Choose `Others` only as a last resort, when the sample clearly does not fit Machine Learning, Data Structures, Numerical Computation, or Algorithms. If the sample can reasonably fit one of the first four categories, do not choose `Others`.
-- Do not use `Algorithms` as a default fallback category.
-- Choose `Algorithms` only when the core of the sample is a solving strategy or algorithmic paradigm.
-- Prefer `Numerical Computation` over `Algorithms` for formula-heavy, arithmetic, number-theoretic, geometric, probabilistic, statistical, matrix/vector, or other mainly numerical content.
-- Prefer `Data Structures` over `Algorithms` when the sample is mainly about the data structure itself.
-- Prefer `Others` over `Algorithms` for system, utility, parsing, encoding, serialization, class-modeling, API, protocol, file, or format-processing code.
-- Loops, conditions, or a step-by-step procedure alone do not make a sample `Algorithms`.
+- Focus on the hot computation of the sample, i.e., the part that dominates execution time, not on the surrounding I/O or setup code.
+- Choose `Numerical Computation` when the hot computation is arithmetic over arrays, vectors, or matrices that can be processed element-wise or as reductions.
+- Choose `Bit-level Computation` when the hot computation is dominated by shifts, rotations, bitwise logic, bit counting, byte manipulation, or encoding, hashing, and encryption routines built from them.
+- Choose `Control-intensive Computation` when the hot computation is dominated by data-dependent conditions, such as filtering, thresholding, selection, masking, or state updates, rather than by arithmetic throughput.
+- Choose `Machine Learning` when the hot computation is a neural-network or learning operator, such as matrix multiplication, convolution, fully connected layers, or quantized inference kernels.
+- Prefer `Machine Learning` over `Numerical Computation` for matrix multiplication and convolution kernels, including generic GEMM.
+- Prefer `Bit-level Computation` over `Control-intensive Computation` when conditions only guard bitwise work.
+- Loops, conditions, or a step-by-step procedure alone do not make a sample `Control-intensive Computation`.
 
 Output constraint:
 
 - You must output exactly one label from this set:
-  - Machine Learning
-  - Data Structures
   - Numerical Computation
-  - Algorithms
-  - Others
+  - Bit-level Computation
+  - Control-intensive Computation
+  - Machine Learning
 - Do not output explanations, analysis, or any extra text.
 
 Output format:
@@ -47,23 +44,19 @@ Inside the code block, output exactly one label on exactly one line.
 Valid examples:
 
 ```text
-Machine Learning
-```
-
-```text
-Data Structures
-```
-
-```text
 Numerical Computation
 ```
 
 ```text
-Algorithms
+Bit-level Computation
 ```
 
 ```text
-Others
+Control-intensive Computation
+```
+
+```text
+Machine Learning
 ```
 
 Sample to classify:

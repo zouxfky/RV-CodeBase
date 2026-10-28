@@ -109,6 +109,19 @@ compare_outputs() {
 
   normalize_to_file "$expected_file" "$expected_norm"
   normalize_to_file "$actual_file" "$actual_norm"
+  # Optional: compare only lines matching OUTPUT_FILTER (e.g. checksum lines when
+  # the program also prints timing information).
+  if [ -n "${OUTPUT_FILTER:-}" ]; then
+    grep -E "$OUTPUT_FILTER" "$expected_norm" > "$expected_norm.f" || true
+    grep -E "$OUTPUT_FILTER" "$actual_norm" > "$actual_norm.f" || true
+    mv "$expected_norm.f" "$expected_norm"
+    mv "$actual_norm.f" "$actual_norm"
+    if [ ! -s "$expected_norm" ]; then
+      printf 'no output line matches OUTPUT_FILTER in baseline output\n' > "$message_file"
+      rm -f "$expected_norm" "$actual_norm"
+      return 1
+    fi
+  fi
 
   # Reject saturated floats. inf/nan in either side means the kernel went numerically
   # unstable; identical "inf" strings on both sides is not a real correctness signal
@@ -218,9 +231,9 @@ compile_one() {
   bin="$2"
   err="$3"
   if command -v timeout >/dev/null 2>&1; then
-    sh -c "timeout '$COMPILE_TIMEOUT' nice -n '$REMOTE_NICE' $COMPILE_CMD '$src' -o '$bin' ${COMPILE_TAIL:-}" 2> "$err"
+    sh -c "timeout '$COMPILE_TIMEOUT' nice -n '$REMOTE_NICE' ${ACTIVE_COMPILE_CMD:-$COMPILE_CMD} '$src' -o '$bin' ${COMPILE_TAIL:-}" 2> "$err"
   else
-    sh -c "nice -n '$REMOTE_NICE' $COMPILE_CMD '$src' -o '$bin' ${COMPILE_TAIL:-}" 2> "$err"
+    sh -c "nice -n '$REMOTE_NICE' ${ACTIVE_COMPILE_CMD:-$COMPILE_CMD} '$src' -o '$bin' ${COMPILE_TAIL:-}" 2> "$err"
   fi
 }
 
@@ -239,13 +252,13 @@ compile_baseline_one() {
     [ -f "$f" ] && cache_inputs="$cache_inputs $f"
   done
   if command -v sha256sum >/dev/null 2>&1; then
-    cache_key="$( (printf '%s\n' "$COMPILE_CMD ${COMPILE_TAIL:-}"; for f in $cache_inputs; do cat "$f"; done) | sha256sum | awk '{print $1}' )"
+    cache_key="$( (printf '%s\n' "${BASELINE_COMPILE_CMD:-$COMPILE_CMD} ${COMPILE_TAIL:-}"; for f in $cache_inputs; do cat "$f"; done) | sha256sum | awk '{print $1}' )"
   else
-    cache_key="$( (printf '%s\n' "$COMPILE_CMD ${COMPILE_TAIL:-}"; for f in $cache_inputs; do cat "$f"; done) | cksum | awk '{print $1 "_" $2}' )"
+    cache_key="$( (printf '%s\n' "${BASELINE_COMPILE_CMD:-$COMPILE_CMD} ${COMPILE_TAIL:-}"; for f in $cache_inputs; do cat "$f"; done) | cksum | awk '{print $1 "_" $2}' )"
   fi
   cache_bin="$cache_root/$cache_key.bin"
 
-  if [ -x "$cache_bin" ]; then
+  if [ "${BASELINE_CACHE:-1}" = "1" ] && [ -x "$cache_bin" ]; then
     cp "$cache_bin" "$bin"
     chmod +x "$bin" 2>/dev/null || true
     : > "$err"
@@ -253,9 +266,9 @@ compile_baseline_one() {
   fi
 
   mkdir -p "$cache_root" 2>/dev/null || true
-  compile_one "$src" "$bin" "$err"
+  ACTIVE_COMPILE_CMD="${BASELINE_COMPILE_CMD:-$COMPILE_CMD}" compile_one "$src" "$bin" "$err"
   rc="$?"
-  if [ "$rc" -eq 0 ] && [ -x "$bin" ] && [ -d "$cache_root" ]; then
+  if [ "${BASELINE_CACHE:-1}" = "1" ] && [ "$rc" -eq 0 ] && [ -x "$bin" ] && [ -d "$cache_root" ]; then
     tmp_cache="$cache_bin.$$"
     cp "$bin" "$tmp_cache" 2>/dev/null && chmod +x "$tmp_cache" 2>/dev/null && mv "$tmp_cache" "$cache_bin" 2>/dev/null || rm -f "$tmp_cache"
   fi
@@ -401,12 +414,60 @@ while IFS="$(printf '\t')" read -r testcase_index input_file; do
 done < cases.tsv
 correct_cases_json="$correct_cases_json]"
 
+# Performance phase: after all cases pass, re-run each case with warmup runs and
+# take the median of interleaved timed runs, so one-off noise does not decide speedup.
+: "${PERF_WARMUP:=1}"
+: "${PERF_REPEATS:=5}"
+median_lines() {
+  sort -n | awk '{ v[NR] = $1 } END { if (NR == 0) printf "0.000000"; else if (NR % 2) printf "%.6f", v[(NR + 1) / 2]; else printf "%.6f", (v[NR / 2] + v[NR / 2 + 1]) / 2 }'
+}
+if [ "${PERF_REPEATS:-0}" -gt 0 ]; then
+  baseline_times_csv=""
+  optimized_times_csv=""
+  while IFS="$(printf '\t')" read -r testcase_index input_file; do
+    [ -z "${testcase_index:-}" ] && continue
+    w=0
+    while [ "$w" -lt "$PERF_WARMUP" ]; do
+      run_case ./baseline.bin "$input_file" "perf.baseline.$testcase_index"
+      run_case ./optimized.bin "$input_file" "perf.optimized.$testcase_index"
+      w=$((w + 1))
+    done
+    : > "perf.baseline.$testcase_index.samples"
+    : > "perf.optimized.$testcase_index.samples"
+    r=0
+    while [ "$r" -lt "$PERF_REPEATS" ]; do
+      run_case ./baseline.bin "$input_file" "perf.baseline.$testcase_index"
+      cat "perf.baseline.$testcase_index.time" >> "perf.baseline.$testcase_index.samples"; echo >> "perf.baseline.$testcase_index.samples"
+      run_case ./optimized.bin "$input_file" "perf.optimized.$testcase_index"
+      cat "perf.optimized.$testcase_index.time" >> "perf.optimized.$testcase_index.samples"; echo >> "perf.optimized.$testcase_index.samples"
+      r=$((r + 1))
+    done
+    btime="$(median_lines < "perf.baseline.$testcase_index.samples")"
+    otime="$(median_lines < "perf.optimized.$testcase_index.samples")"
+    if [ -z "$baseline_times_csv" ]; then
+      baseline_times_csv="$btime"
+      optimized_times_csv="$otime"
+    else
+      baseline_times_csv="$baseline_times_csv,$btime"
+      optimized_times_csv="$optimized_times_csv,$otime"
+    fi
+  done < cases.tsv
+fi
+
+# Report which target-extension instructions appear in the optimized binary.
+ext_insn_json="{}"
+if [ -n "${EXT_INSN_REGEX:-}" ] && command -v objdump >/dev/null 2>&1; then
+  b_cnt="$(objdump -d ./baseline.bin 2>/dev/null | grep -Ec "[[:space:]](${EXT_INSN_REGEX})[[:space:]]" || true)"
+  o_cnt="$(objdump -d ./optimized.bin 2>/dev/null | grep -Ec "[[:space:]](${EXT_INSN_REGEX})[[:space:]]" || true)"
+  ext_insn_json="{\"baseline\":${b_cnt:-0},\"optimized\":${o_cnt:-0}}"
+fi
+
 baseline_avg="$(printf '%s\n' "$baseline_times_csv" | mean_csv)"
 optimized_avg="$(printf '%s\n' "$optimized_times_csv" | mean_csv)"
 speedup="$(awk "BEGIN { if ($optimized_avg > 0) printf \"%.12f\", $baseline_avg / $optimized_avg; else printf \"0.000000\" }")"
 
 cat > "$RESULT_PATH" <<EOF
-{"pid":"$(json_escape_text "$PID")","status":"pass","stage":"performance","error_type":"","message":"","global_sf_n":$GLOBAL_SF_N,"baseline_time_ms":$baseline_avg,"optimized_time_ms":$optimized_avg,"speedup_ratio":$speedup,"baseline_times_ms":[$baseline_times_csv],"optimized_times_ms":[$optimized_times_csv],"cases":$correct_cases_json}
+{"pid":"$(json_escape_text "$PID")","status":"pass","stage":"performance","error_type":"","message":"","global_sf_n":$GLOBAL_SF_N,"baseline_time_ms":$baseline_avg,"optimized_time_ms":$optimized_avg,"speedup_ratio":$speedup,"baseline_times_ms":[$baseline_times_csv],"optimized_times_ms":[$optimized_times_csv],"cases":$correct_cases_json,"ext_insn_count":$ext_insn_json}
 EOF
 
 exit 0

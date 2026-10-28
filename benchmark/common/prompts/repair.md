@@ -12,7 +12,7 @@ You are a RISC-V code optimization expert. Use the existing session context to r
 * Keep all input and output behavior exactly the same, including return values, memory writes, global side effects, and any observable I/O.
 * Keep the same function names, signatures, parameter meanings, return types, and externally visible behavior.
 * Preserve the original computation and dynamic workload. Do not skip work, replace computation with constants, precompute away loops, or otherwise reduce the real work being performed.
-* Keep useful RISC-V Vector optimization work when possible.
+* Keep useful instruction-set-extension optimization work when possible.
 * Do not add unrelated scaffolding or extra entry points.
 
 # Output Format

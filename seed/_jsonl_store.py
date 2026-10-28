@@ -1,6 +1,6 @@
 """In-place JSONL row store with stage-based resume and atomic flush.
 
-Used by 1.2 / 1.4 / 1.5 / 1.6 / 1.7 — every stage script reads the whole
+Used by seed/1.2, seed/1.4 and workload/2.1-2.3 — every stage script reads the whole
 table, processes pending rows, and periodically rewrites the file atomically.
 A file lock guards against running two stages concurrently against the same
 file.

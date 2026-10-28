@@ -5,8 +5,8 @@ Each subset is fetched and placed at its canonical location in this repo.
 
 Usage:
   python download.py                       # all subsets
-  python download.py --subset benchmark    # one subset
-  python download.py --subset rag sft      # multiple subsets
+  python download.py --subset sft          # one subset
+  python download.py --subset sft pipeline # multiple subsets
   python download.py --subset models       # all merged SFT models
   python download.py --list                # show available subsets
   python download.py --force --subset sft  # re-download even if present
@@ -42,8 +42,6 @@ MODEL_REPOS = {
 # subset -> (repo_id, repo_type, remote_prefix, local_target)
 # remote_prefix "" means the entire repo (use for model checkpoints).
 SUBSETS = {
-    "benchmark": (DATASET_REPO, "dataset", "benchmark", REPO_DIR / "benchmark" / "data"),
-    "rag":       (DATASET_REPO, "dataset", "rag",       REPO_DIR / "rag" / "data"),
     "sft":       (DATASET_REPO, "dataset", "sft",       REPO_DIR / "sft" / "data"),
     "pipeline":  (DATASET_REPO, "dataset", "data",      REPO_DIR / "data"),
     "model-qwen3.5-9b-sft": (

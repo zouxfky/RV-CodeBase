@@ -1,11 +1,12 @@
 tqdm
 openai
 huggingface_hub==1.16.4
-rank-bm25==0.2.2
 
 # SFT (training + serving). Optional - install only when fine-tuning.
-# Qwen3.5 currently works with the local editable LLaMA-Factory checkout and
-# the pinned transformers version below.
+llamafactory
 transformers==5.6.0
+peft
+torch
+pyyaml
 tensorboard==2.20.0
 vllm

@@ -24,13 +24,13 @@ DEFAULT_SYSTEM_PROMPT = (
     "You are a strict classifier. "
     "You must return exactly one valid top-level category."
 )
-VALID_LABELS = {
-    "Machine Learning",
-    "Data Structures",
-    "Numerical Computation",
-    "Algorithms",
-    "Others",
+CATEGORY_TO_EXTENSION = {
+    "Numerical Computation": "RVV",
+    "Bit-level Computation": "B",
+    "Control-intensive Computation": "Zicond",
+    "Machine Learning": "IME",
 }
+VALID_LABELS = set(CATEGORY_TO_EXTENSION)
 _CLIENT_CACHE: dict[tuple[str, str, int], OpenAI] = {}
 
 
@@ -191,7 +191,14 @@ def main() -> int:
                 pid = str(row.get("pid", "")).strip()
                 try:
                     label = done_future.result()
-                    store.update_row(pid, {"category": label, "stage": "classified"})
+                    store.update_row(
+                        pid,
+                        {
+                            "category": label,
+                            "extension": CATEGORY_TO_EXTENSION[label],
+                            "stage": "classified",
+                        },
+                    )
                 except Exception as exc:
                     store.update_row(pid, {"error": f"{type(exc).__name__}: {exc}"})
                     tqdm.write(f"[CLASSIFY_ERROR] {pid} {type(exc).__name__}: {exc}")

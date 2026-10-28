@@ -15,6 +15,7 @@ IMPROVE_PROMPT = PROMPTS_DIR / "3-optimize-improve.md"
 if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
 
+import _extensions
 import _llm
 import _parser
 
@@ -101,6 +102,8 @@ def build_generate_prompt(
     return render_prompt(
         template,
         pid=pid,
+        extension=context["extension"],
+        extension_guidance=_extensions.guidance_for(context["extension"]),
         baseline_code=context["baseline_code"],
         main_program=context["main_program"],
     )
@@ -109,12 +112,14 @@ def build_generate_prompt(
 def build_repair_prompt(
     *,
     pid: str,
+    extension: str,
     debug_result: dict,
 ) -> str:
     template = load_prompt_text(REPAIR_PROMPT)
     return render_prompt(
         template,
         pid=pid,
+        extension=extension,
         debug_result_json=dumps_compact(debug_result),
     )
 
@@ -122,12 +127,14 @@ def build_repair_prompt(
 def build_improve_prompt(
     *,
     pid: str,
+    extension: str,
     debug_result: dict,
 ) -> str:
     template = load_prompt_text(IMPROVE_PROMPT)
     return render_prompt(
         template,
         pid=pid,
+        extension=extension,
         debug_result_json=dumps_compact(debug_result),
     )
 
@@ -158,12 +165,14 @@ def repair_candidate(
     *,
     config_path: Path,
     pid: str,
+    extension: str,
     debug_result: dict,
     messages: list[dict],
     attempt: int,
 ) -> dict:
     prompt = build_repair_prompt(
         pid=pid,
+        extension=extension,
         debug_result=debug_result,
     )
     return call_optimize_llm(
@@ -180,12 +189,14 @@ def improve_candidate(
     *,
     config_path: Path,
     pid: str,
+    extension: str,
     debug_result: dict,
     messages: list[dict],
     attempt: int,
 ) -> dict:
     prompt = build_improve_prompt(
         pid=pid,
+        extension=extension,
         debug_result=debug_result,
     )
     return call_optimize_llm(

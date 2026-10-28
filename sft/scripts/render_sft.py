@@ -3,18 +3,20 @@
 
 Input:
   - sft/data/pairs.jsonl
-    rows: {pid, label, speedup, baseline, optimized}
+    rows: {pid, extension, speedup, baseline, optimized}
 
 Outputs:
   - sft/data/train.jsonl
   - sft/data/eval.jsonl
-    rows: {pid, label, speedup, instruction, input, output}
+    rows: {pid, extension, speedup, instruction, input, output}
 
 Rendering rule:
-  instruction = generate.md prompt template with {baseline_code} filled in
+  instruction = the benchmark prompt (benchmark/common/prompts/generate.md) with
+                {extension_info} filled from benchmark/common/extensions.py for the
+                pair's target extension and {baseline_code} filled with the original
+                program, so training and evaluation use the same prompt format
   input       = ""
-  output      = positive: "<code>\\n" + optimized + "\\n</code>"
-                negative: REJECT_MESSAGE + "\\n\\n<code>\\n" + baseline + "\\n</code>"
+  output      = "<code>\\n" + optimized + "\\n</code>"
 
 Train/eval split is stable per-pid (md5 bucket), so re-running with the same
 --eval-ratio is reproducible.
@@ -37,9 +39,8 @@ DEFAULT_PAIRS = REPO_DIR / "sft" / "data" / "pairs.jsonl"
 DEFAULT_PROMPT = REPO_DIR / "benchmark" / "common" / "prompts" / "generate.md"
 DEFAULT_OUT_DIR = REPO_DIR / "sft" / "data"
 
-REJECT_MESSAGE = (
-    "No beneficial RVV optimization found; returning the original code unchanged."
-)
+sys.path.insert(0, str(REPO_DIR / "benchmark"))
+from common.extensions import EXTENSIONS  # noqa: E402
 
 
 def read_jsonl(path):
@@ -64,14 +65,13 @@ def stable_split(pid, eval_ratio):
     return "eval" if bucket < eval_ratio else "train"
 
 
-def render_instruction(template, baseline):
-    return template.replace("{baseline_code}", baseline)
+def render_instruction(template, extension, baseline):
+    info = EXTENSIONS[extension.lower()]["info"]
+    return template.replace("{extension_info}", info).replace("{baseline_code}", baseline)
 
 
-def render_output(label, baseline, optimized):
-    body = optimized if label == "positive" else baseline
-    prefix = "" if label == "positive" else REJECT_MESSAGE + "\n\n"
-    return f"{prefix}<code>\n{body}\n</code>"
+def render_output(optimized):
+    return f"<code>\n{optimized}\n</code>"
 
 
 def build(args):
@@ -98,19 +98,19 @@ def build(args):
         return len(tokenizer.encode(text, add_special_tokens=False)) > args.max_tokens
 
     train_rows, eval_rows = [], []
-    label_total = Counter()
-    train_labels = Counter()
-    eval_labels = Counter()
+    ext_total = Counter()
+    train_exts = Counter()
+    eval_exts = Counter()
     dropped_long = 0
 
     for row in read_jsonl(args.pairs):
         pid = row["pid"]
-        label = row["label"]
+        extension = row["extension"]
         baseline = row["baseline"]
         optimized = row["optimized"]
 
-        instruction = render_instruction(template, baseline)
-        output = render_output(label, baseline, optimized)
+        instruction = render_instruction(template, extension, baseline)
+        output = render_output(optimized)
 
         if too_long(instruction, output):
             dropped_long += 1
@@ -118,19 +118,19 @@ def build(args):
 
         sample = {
             "pid": pid,
-            "label": label,
+            "extension": extension,
             "speedup": row.get("speedup", 0.0),
             "instruction": instruction,
             "input": "",
             "output": output,
         }
-        label_total[label] += 1
+        ext_total[extension] += 1
         if stable_split(pid, args.eval_ratio) == "eval":
             eval_rows.append(sample)
-            eval_labels[label] += 1
+            eval_exts[extension] += 1
         else:
             train_rows.append(sample)
-            train_labels[label] += 1
+            train_exts[extension] += 1
 
     if args.shuffle:
         random.Random(args.seed_value).shuffle(train_rows)
@@ -139,14 +139,13 @@ def build(args):
     write_jsonl(out_dir / "train.jsonl", train_rows)
     write_jsonl(out_dir / "eval.jsonl", eval_rows)
 
-    print(f"pairs read:    {sum(label_total.values()) + dropped_long}")
+    print(f"pairs read:    {sum(ext_total.values()) + dropped_long}")
     if dropped_long:
         print(f"  dropped (> {args.max_tokens} tokens): {dropped_long}")
     print(f"")
-    print(f"train.jsonl    {len(train_rows):>6}  "
-          f"(pos={train_labels['positive']}, neg={train_labels['negative']})  -> {out_dir / 'train.jsonl'}")
-    print(f"eval.jsonl     {len(eval_rows):>6}  "
-          f"(pos={eval_labels['positive']}, neg={eval_labels['negative']})  -> {out_dir / 'eval.jsonl'}")
+    for name, rows, exts in (("train", train_rows, train_exts), ("eval", eval_rows, eval_exts)):
+        detail = ", ".join(f"{ext}={exts[ext]}" for ext in sorted(exts))
+        print(f"{name}.jsonl {len(rows):>8}  ({detail})  -> {out_dir / (name + '.jsonl')}")
 
 
 def main():

@@ -89,6 +89,7 @@ def summarize_remote_result(remote_result: dict) -> dict:
         "baseline_times_ms": list(remote_result.get("baseline_times_ms", [])),
         "optimized_times_ms": list(remote_result.get("optimized_times_ms", [])),
         "cases": list(remote_result.get("cases", [])),
+        "ext_insn_count": dict(remote_result.get("ext_insn_count") or {}),
     }
 
 

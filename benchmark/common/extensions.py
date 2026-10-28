@@ -9,6 +9,7 @@ EXTENSIONS = {
         "insn_regex": r"vset[i]?vli|vl[0-9a-z]*\.v|vs[0-9a-z]*\.v|v[a-z0-9]+\.(vv|vx|vf|vi|vs|wv|wx|vm|v)",
         "info": """Target extension: RISC-V Vector extension (RVV 1.0).
 * Use RVV intrinsics from `<riscv_vector.h>` with the official `__riscv_*` names, with `vsetvl`-based strip-mining so the code is correct for any VLEN.
+* Match the element type of the data: `float` arrays use `f32` intrinsics (e.g. `__riscv_vle32_v_f32m*`, `__riscv_vfadd_vv_f32m*`), not `f64`.
 * Guard the header exactly as:
   #if defined(__riscv_vector)
   #include <riscv_vector.h>

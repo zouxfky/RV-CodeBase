@@ -6,7 +6,7 @@ Reads <suite>/results/<model>/<ext>.jsonl (Base) and <suite>/results/<model>-sft
 (SFT) for the tasks listed in classes.json; a task without a result counts as failed.
 Overall pools the tasks of all four benchmarks.
 
-    python3 benchmark/table.py > benchmark/table.md
+    python3 benchmark/table.py > benchmark/results.md
     python3 benchmark/table.py --format latex
 """
 import argparse
@@ -69,13 +69,14 @@ def main() -> int:
     groups = [label for _, label in SUITES] + ["Overall"]
 
     if args.format == "markdown":
-        hdr = ["Model", "Setting"] + [f"{g} {m}" for g in groups for m in ("CR (%)", "PSR (%)", "SR")]
+        hdr = ["Model", "Setting"] + [f"{g} {m}" for g in groups for m in ("CR", "PSR", "SR")]
         print("| " + " | ".join(hdr) + " |")
-        print("|" + "---|" * len(hdr))
+        print("|" + "---|" * 2 + "--:|" * (len(hdr) - 2))
         for model in models:
             for setting, method in (("Base", model), ("SFT", f"{model}-sft")):
                 row = [c for b in evaluate(method, classes) for c in cells(b)]
-                print("| " + " | ".join([names.get(model, model), setting] + row) + " |")
+                name = names.get(model, model) if setting == "Base" else ""
+                print("| " + " | ".join([name, setting] + row) + " |")
     else:
         for model in models:
             for setting, method in (("Base", model), ("SFT", f"{model}-sft")):

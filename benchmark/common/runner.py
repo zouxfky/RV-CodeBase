@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Runner for the extension benchmarks other than RVV (entry point: benchmark/run.py).
+"""Runner for Mbed TLS, TACLeBench and CMSIS-NN (entry point: benchmark/run.py; TSVC: tsvc/run.py).
 
     benchmark/<suite>/dataset.jsonl                          original programs
-    benchmark/<suite>/baseline/<method>/<ext>.jsonl          optimized code (manual, <model>)
-    benchmark/<suite>/results/<method>/<ext>.jsonl           speedup, status, ... (manual, <model>)
+    benchmark/<suite>/baseline/<method>/<ext>.jsonl          optimized code (<model>, <model>-sft)
+    benchmark/<suite>/results/<method>/<ext>.jsonl           speedup, status, ... (<model>, <model>-sft)
 
 Each dataset row is one whole-file kernel together with its fixed harness:
 
@@ -15,8 +15,6 @@ The LLM rewrites `code` (the kernel file); `files` and `compile_sources` stay
 fixed, so the harness and the result check cannot be modified by the model.
 """
 import argparse
-import threading
-from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import json
 import re
@@ -49,10 +47,10 @@ _spec.loader.exec_module(tsvc)
 MAIN_PATTERN = tsvc.MAIN_PATTERN
 
 
-# Programs of each suite under its target extension (see PROGRAMS.md):
+# Programs of each suite under its target extension (listed in classes.json):
 # Mbed TLS -> B, TACLeBench -> Zicond, CMSIS-NN -> IME.
 CLASSES = json.loads((BENCHMARK_DIR / "classes.json").read_text())
-# TSVC (RVV) has its own runner, benchmark/tsvc/run.py.
+# TSVC (RVV) keeps its own harness, tsvc/run.py; benchmark/run.py dispatches to it.
 SUITE_EXT = {suite: next(iter(c)) for suite, c in CLASSES.items() if suite != "tsvc"}
 
 
@@ -61,7 +59,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--suite", required=True, choices=sorted(SUITE_EXT))
     parser.add_argument("--ext", choices=sorted(set(SUITE_EXT.values())), help="default: the suite's target extension")
     parser.add_argument("--dataset", help="default: <suite>/dataset.jsonl")
-    parser.add_argument("--method", help="name under baseline/ and results/; default: the mode (llm mode: required, e.g. the model name)")
+    parser.add_argument("--method", required=True, help="name under baseline/ and results/: <model> (Base) or <model>-sft (SFT)")
     parser.add_argument("--output", help="work file (resumable); default: tmp/benchmark_<suite>_<ext>/<method>.jsonl")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG))
     parser.add_argument("--tmp-dir")
@@ -78,15 +76,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--llm-j", type=int, default=1)
     parser.add_argument("--run-j", type=int, default=1)
     parser.add_argument("-n", type=int, default=None)
-    parser.add_argument("--mode", choices=["llm", "manual"], default="llm")
     args = parser.parse_args()
     args.ext = args.ext or SUITE_EXT[args.suite]
     if args.ext != SUITE_EXT[args.suite]:
         parser.error(f"--ext {args.ext} is not evaluated on {args.suite}")
     suite_dir = BENCHMARK_DIR / args.suite
-    if args.mode == "llm" and not args.method:
-        parser.error("--method <model name> is required in llm mode")
-    args.method = args.method or args.mode
     args.code_path, args.result_path = method_paths(suite_dir, args.method, args.ext)
     args.dataset = args.dataset or str(suite_dir / "dataset.jsonl")
     args.tmp_dir = args.tmp_dir or str(REPO_DIR / f"tmp/benchmark_{args.suite}_{args.ext}")
@@ -261,16 +255,6 @@ def debug_candidate(*, row: dict, optimized_code: str, attempt: int, tmp_dir: Pa
     return run_job(job_dir, wall_timeout, str(row["id"]))
 
 
-WRITE_LOCK = threading.Lock()
-
-
-def parallel(rows: list[dict], jobs: int, fn) -> None:
-    """Run fn(row) over rows with `jobs` threads (each job is a board subprocess)."""
-    with ThreadPoolExecutor(max_workers=max(1, int(jobs))) as pool:
-        for fut in [pool.submit(fn, r) for r in rows]:
-            fut.result()
-
-
 def main() -> int:
     global ARGS
     ARGS = args = parse_args()
@@ -282,28 +266,6 @@ def main() -> int:
     if args.n is not None:
         rows = rows[: max(0, int(args.n))]
     by_id = {str(r["id"]): r for r in rows}
-    if args.mode == "manual":
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.unlink(missing_ok=True)
-        manual = {r["id"]: r["code"] for r in read_jsonl(args.code_path)}
-        def manual_one(row: dict) -> None:
-            code = manual.get(str(row["id"]))
-            if code is None:
-                return
-            debug = debug_candidate(row=row, optimized_code=code, attempt=0, tmp_dir=Path(args.tmp_dir) / "manual",
-                                    compile_cmd="", compile_timeout=args.compile_timeout,
-                                    run_timeout=args.run_timeout, wall_timeout=args.wall_timeout)
-            tsvc.log_sample(str(row["id"]), f"manual status={debug['status']} speedup={debug['speedup_ratio']:.4f} "
-                            f"insn={debug.get('ext_insn_count')} {debug.get('message', '')[:300]}")
-            result = {"id": str(row["id"]), "mode": "manual", "status": debug["status"],
-                      "best_speedup_ratio": debug["speedup_ratio"], "code": code, "debug": debug,
-                      "platform": args.platform, "extension": row["extension"], "suite": row["suite"]}
-            with WRITE_LOCK:
-                tsvc.replace_result_row(output_path, result)
-        parallel(rows, args.run_j, manual_one)
-        export_run(output_path, None, args.result_path, extension)
-        return 0
-
     def replace_result_row(path: Path, result: dict) -> None:
         src = by_id.get(str(result["id"]), {})
         result.update(platform=args.platform, extension=src.get("extension"), suite=src.get("suite"),

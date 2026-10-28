@@ -1,8 +1,7 @@
 """Evaluation metrics, computed over all tasks of a benchmark.
 
     CR   correctness rate: share of tasks whose generated program compiles and
-         passes the functional tests (result status "success"; "pass" in
-         manual-mode rows).
+         passes the functional tests (result status "success").
     PSR  positive speedup rate: share of tasks that are correct and faster than
          the original program (speedup > 1).
     SR   speedup: geometric mean of original/generated execution time over all
@@ -13,7 +12,7 @@ import math
 
 
 def is_correct(row: dict | None) -> bool:
-    return bool(row) and str(row.get("status", "")).strip() in ("success", "pass")
+    return bool(row) and str(row.get("status", "")).strip() == "success"
 
 
 def speedup(row: dict | None) -> float:

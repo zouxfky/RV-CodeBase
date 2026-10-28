@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""RVV benchmark runner (TSVC kernels).
+"""TSVC suite (RVV); entry point: benchmark/run.py --suite tsvc.
 
-    python3 benchmark/tsvc/run.py --method <model>
+    python3 benchmark/run.py --suite tsvc --method <model>|<model>-sft
 
-Code goes to tsvc/baseline/<model>/rvv.jsonl, speedups and status to
-tsvc/results/<model>/rvv.jsonl.
+Uses the shared prompts in common/prompts with the RVV extension description.
+Code goes to tsvc/baseline/<method>/rvv.jsonl, speedups and status to
+tsvc/results/<method>/rvv.jsonl.
 """
 import argparse
 import json
@@ -20,10 +21,10 @@ OPTIMIZE_DIR = REPO_DIR / "optimize"
 
 DEFAULT_DATASET = METHOD_DIR / "dataset.jsonl"
 DEFAULT_CONFIG = REPO_DIR / "llm_config.env"
-DEFAULT_TMP_DIR = REPO_DIR / "tmp/benchmark_rvv"
-DEFAULT_SESSION_DIR = REPO_DIR / "tmp/benchmark_rvv_sessions"
+DEFAULT_TMP_DIR = REPO_DIR / "tmp/benchmark_tsvc_rvv"
+DEFAULT_SESSION_DIR = REPO_DIR / "tmp/benchmark_tsvc_rvv_sessions"
 
-PROMPT_DIR = METHOD_DIR / "prompts"
+PROMPT_DIR = BENCHMARK_DIR / "common" / "prompts"
 GENERATE_PROMPT = PROMPT_DIR / "generate.md"
 REPAIR_PROMPT = PROMPT_DIR / "repair.md"
 IMPROVE_PROMPT = PROMPT_DIR / "improve.md"
@@ -36,6 +37,7 @@ if str(OPTIMIZE_DIR) not in sys.path:
 from common.io import export_run, method_paths, read_jsonl, write_jsonl  # noqa: E402
 import _bench  # noqa: E402
 from common import local as _local  # noqa: E402
+from common.extensions import EXTENSIONS  # noqa: E402
 
 
 DRIVER_INCLUDE_MARKER = '#include "array_defs.h"\n'
@@ -49,9 +51,9 @@ MEMALIGN_CALL_PATTERN = re.compile(r"(?<![A-Za-z0-9_])memalign\s*\(")
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default=str(DEFAULT_DATASET))
-    parser.add_argument("--method", required=True, help="name under baseline/ and results/, e.g. the model name")
+    parser.add_argument("--method", required=True, help="name under baseline/ and results/: <model> (Base) or <model>-sft (SFT)")
     parser.add_argument("--platform", default="milkv")
-    parser.add_argument("--output", help="work file (resumable); default: tmp/benchmark_rvv/<method>.jsonl")
+    parser.add_argument("--output", help="work file (resumable); default: tmp/benchmark_tsvc_rvv/<method>.jsonl")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG))
     parser.add_argument("--tmp-dir", default=str(DEFAULT_TMP_DIR))
     parser.add_argument("--session-dir", default=str(DEFAULT_SESSION_DIR))
@@ -282,6 +284,7 @@ def build_generate_prompt(row: dict) -> str:
     template = load_prompt(GENERATE_PROMPT)
     return render_prompt(
         template,
+        extension_info=EXTENSIONS["rvv"]["info"],
         baseline_code=kernel_block(row),
     )
 
@@ -686,7 +689,7 @@ def optimize_sample(row: dict, args: argparse.Namespace) -> dict:
 def main() -> int:
     args = parse_args()
     output_path = Path(args.output)
-    # Only the kernels that RVV can speed up (see PROGRAMS.md).
+    # Only the kernels that RVV can speed up (listed in classes.json).
     wanted = set(json.loads((BENCHMARK_DIR / "classes.json").read_text())["tsvc"]["rvv"])
     dataset_rows = [r for r in read_jsonl(args.dataset) if str(r["id"]) in wanted]
     if args.n is not None:
